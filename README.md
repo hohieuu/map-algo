@@ -1,4 +1,4 @@
-# Valhalla Under The Hood — From Tile Bytes to Live Traffic
+# Valhalla Under The Hood - From Tile Bytes to Live Traffic
 
 **Scope:** Engineering reference describing how the Valhalla routing engine operates end-to-end in our production deployment, with direct links to the corresponding source code on `github.com/valhalla/valhalla` (master branch).
 **Audience:** Engineering, MapOps, Data, Product.
@@ -10,9 +10,9 @@
 
 This document covers three areas:
 
-1. **Data model** — why the map is sliced into three tile levels and how that governs which parts of the graph the router inspects.
-2. **Path-finding** — A\* → Bidirectional A\* → Hierarchical Bidirectional, with the decision logic that selects between them per request.
-3. **Live traffic blending** — the 1-hour fade that weights live speed against historical speed, plus an open upstream bug ([issue #5616](https://github.com/valhalla/valhalla/issues/5616), opened October 2025) that causes the reverse frontier of Bidirectional A\* to apply un-faded live traffic.
+1. **Data model** - why the map is sliced into three tile levels and how that governs which parts of the graph the router inspects.
+2. **Path-finding** - A\* → Bidirectional A\* → Hierarchical Bidirectional, with the decision logic that selects between them per request.
+3. **Live traffic blending** - the 1-hour fade that weights live speed against historical speed, plus an open upstream bug ([issue #5616](https://github.com/valhalla/valhalla/issues/5616), opened October 2025) that causes the reverse frontier of Bidirectional A\* to apply un-faded live traffic.
 
 A concrete exposure analysis for our production request shape is provided in §5.11 and §5.12.
 
@@ -24,9 +24,9 @@ Valhalla does not store "a road network." It stores **three separate road networ
 
 | Level | Tile size | Size at equator | Road classes inside | Shortcut edges? |
 |-------|-----------|-----------------|---------------------|-----------------|
-| **0 — Highway** | 4° × 4° | ~440 km × 440 km | Motorway, Trunk, Primary | Yes |
-| **1 — Arterial** | 1° × 1° | ~110 km × 110 km | Secondary, Tertiary | Yes |
-| **2 — Local** | 0.25° × 0.25° | ~28 km × 28 km | Residential, Service, Paths | No |
+| **0 - Highway** | 4° × 4° | ~440 km × 440 km | Motorway, Trunk, Primary | Yes |
+| **1 - Arterial** | 1° × 1° | ~110 km × 110 km | Secondary, Tertiary | Yes |
+| **2 - Local** | 0.25° × 0.25° | ~28 km × 28 km | Residential, Service, Paths | No |
 
 **Source of truth:** [`src/baldr/tilehierarchy.cc#L14-L30`](https://github.com/valhalla/valhalla/blob/master/src/baldr/tilehierarchy.cc#L14-L30)
 
@@ -44,9 +44,9 @@ It is not taxonomy. It is a **search-pruning optimisation**.
 
 - Near origin and destination we need every alley, so we search Level 2.
 - In the middle of a 1,700 km ride we do not care about alleys, so we jump to Level 0 and ignore the rest.
-- Level 0 has **shortcut edges** — virtual edges that collapse long chains of highway nodes into a single "teleport" so A\* has fewer branches to explore.
+- Level 0 has **shortcut edges** - virtual edges that collapse long chains of highway nodes into a single "teleport" so A\* has fewer branches to explore.
 
-**Analogy for product people:** Think of Google search. When you type a query, Google does not scan every webpage — it hits an index that already collapsed 100 similar pages into one entry. L0 shortcuts are that index, for highways.
+**Analogy for product people:** Think of Google search. When you type a query, Google does not scan every webpage - it hits an index that already collapsed 100 similar pages into one entry. L0 shortcuts are that index, for highways.
 
 ### `.gph` tile = flat binary blob
 
@@ -56,7 +56,7 @@ A single tile file is a fixed-layout binary, not a database. Layout (same order 
 GraphTileHeader → NodeInfo[] → DirectedEdge[] → EdgeInfo[] → Signs → Restrictions → Admins → …
 ```
 
-You `mmap` the file, cast pointers to structs, and index by offset. **Zero parsing cost** — this is how Valhalla loads Earth-scale data in milliseconds. The `mmap` approach also means multiple worker processes on the same machine share the same physical memory pages: the OS pays for the map once, every worker gets zero-copy access.
+You `mmap` the file, cast pointers to structs, and index by offset. **Zero parsing cost** - this is how Valhalla loads Earth-scale data in milliseconds. The `mmap` approach also means multiple worker processes on the same machine share the same physical memory pages: the OS pays for the map once, every worker gets zero-copy access.
 
 ### Concrete evidence from our own debug log
 
@@ -68,11 +68,11 @@ A single short route (9.84 km Hanoi inner-city) touched 7 tiles:
 [fwd] TILE LOAD #5 tile=0/2501/0   L0 (0/002/501.gph)    nodes=108728 edges=241144
 ```
 
-All three levels, loaded on demand as the frontier crossed tile boundaries. A single L2 local tile in Hanoi already holds 320k road segments. An L0 highway tile covering 4° × 4° holds 240k — fewer, but each segment is a much longer road.
+All three levels, loaded on demand as the frontier crossed tile boundaries. A single L2 local tile in Hanoi already holds 320k road segments. An L0 highway tile covering 4° × 4° holds 240k - fewer, but each segment is a much longer road.
 
 ---
 
-## 2. GraphId — the 48-bit "address" of every edge and node
+## 2. GraphId - the 48-bit "address" of every edge and node
 
 Every routable element has a 64-bit `GraphId` packed as:
 
@@ -86,7 +86,7 @@ The **same numbering scheme is used by the traffic tiles** (see §5), which is w
 
 ---
 
-## 3. The Visualisation Tool — `tools/tile_browser.html`
+## 3. The Visualisation Tool - `tools/tile_browser.html`
 
 An in-tree browser-based tool is available for inspecting tiles, live-traffic coverage, and algorithm expansion.
 
@@ -101,11 +101,11 @@ An in-tree browser-based tool is available for inspecting tiles, live-traffic co
 | Tile loading feed | Each tile with edge count and level, in load order |
 | Algorithm step annotations | Detects the "hierarchy climb" when three or more L2 tiles have been touched |
 
-**Data path:** it queries the running `valhalla_service` at `/tile`, `/status`, `/route`, and `/expansion`. The `/expansion` endpoint streams every edge the algorithm settled or reached, in order, with `edge_status ∈ {s, r}` and `expansion_type ∈ {0=fwd, 1=rev}` — this is what drives the animation.
+**Data path:** it queries the running `valhalla_service` at `/tile`, `/status`, `/route`, and `/expansion`. The `/expansion` endpoint streams every edge the algorithm settled or reached, in order, with `edge_status ∈ {s, r}` and `expansion_type ∈ {0=fwd, 1=rev}` - this is what drives the animation.
 
 ---
 
-## 4. Algorithms — Easy → Medium → Hard
+## 4. Algorithms - Easy → Medium → Hard
 
 ### 4.0 Which algorithm runs when? (decision tree)
 
@@ -122,7 +122,7 @@ Thor is the pathfinder, but it is not one algorithm. It picks based on the shape
 
 **Key implication:** when a request passes a `depart_at` timestamp, Valhalla switches off bidirectional and runs unidirectional A\* instead. This changes both the performance profile (2× slower on a long trip) and the live-traffic behaviour (see §5.10–5.11). Relevant to any feature that schedules routes for a future departure.
 
-### 4.1 EASY — A\* (unidirectional)
+### 4.1 EASY - A\* (unidirectional)
 
 **One-line model:** Dijkstra, but each candidate node carries a cheat-sheet estimate of remaining cost to the goal, so we stop exploring in the wrong direction.
 
@@ -150,7 +150,7 @@ The diagram shows 6 nodes, A (start) → F (goal). `h(n)` is straight-line dista
 | 5 | **E**(f=9.82) | C closed, D closed, **F(g=9,h=0→f=9)** | F: 9 | E gives a better path to F via C→E→F. |
 | 6 | **F**(f=9) | Goal reached. Reconstruct: F←E←C←A. Total cost = 9. | | |
 
-**Critical lesson:** A\* does NOT stop the first time it touches F. It stops when F is the cheapest thing in the open set. This is why admissibility of `h(n)` matters — if we overestimate, we might accept a suboptimal F before a cheaper path via E is found.
+**Critical lesson:** A\* does NOT stop the first time it touches F. It stops when F is the cheapest thing in the open set. This is why admissibility of `h(n)` matters - if we overestimate, we might accept a suboptimal F before a cheaper path via E is found.
 
 #### Evidence in Valhalla
 
@@ -166,9 +166,9 @@ The diagram shows 6 nodes, A (start) → F (goal). `h(n)` is straight-line dista
 
 ---
 
-### 4.2 MEDIUM — Bidirectional A\*
+### 4.2 MEDIUM - Bidirectional A\*
 
-**One-line model:** Run A\* from the origin going forward AND another A\* from the destination going backward, simultaneously. Stop when they meet. For long routes this roughly halves the explored area — two small balloons instead of one huge one.
+**One-line model:** Run A\* from the origin going forward AND another A\* from the destination going backward, simultaneously. Stop when they meet. For long routes this roughly halves the explored area - two small balloons instead of one huge one.
 
 #### Geometric intuition
 
@@ -184,7 +184,7 @@ Bidirectional A\* runs two discs of radius `d/2` until they meet in the middle:
 area_bidir ≈ 2 × π × (d/2)²  =  π × d² / 2
 ```
 
-**Half the area, half the work — and the savings grow with distance.** This is why long intercity routes benefit the most from bidirectional search.
+**Half the area, half the work - and the savings grow with distance.** This is why long intercity routes benefit the most from bidirectional search.
 
 #### Walkthrough of Image #4 (the A ↔ F bidirectional diagram)
 
@@ -209,14 +209,14 @@ In Image #4: C is the first meeting node with `mu = 2+7 = 9`. The diagram then s
     SetForwardConnection(graphreader, fwd_pred);
   ```
   A forward edge whose opposing direction was already permanently settled by the reverse search means "we've met here."
-- **Keep searching past first meet** ([`src/thor/bidirectional_astar.cc#L894-L901`](https://github.com/valhalla/valhalla/blob/master/src/thor/bidirectional_astar.cc#L894-L901)) — `SetForwardConnection` updates the budget ceiling to `c + threshold_delta_` and continues, because shortcuts plus hierarchy make the heuristic **non-monotone**; the first meet is not automatically optimal.
+- **Keep searching past first meet** ([`src/thor/bidirectional_astar.cc#L894-L901`](https://github.com/valhalla/valhalla/blob/master/src/thor/bidirectional_astar.cc#L894-L901)) - `SetForwardConnection` updates the budget ceiling to `c + threshold_delta_` and continues, because shortcuts plus hierarchy make the heuristic **non-monotone**; the first meet is not automatically optimal.
 - **Forward termination** ([`src/thor/bidirectional_astar.cc#L768-L778`](https://github.com/valhalla/valhalla/blob/master/src/thor/bidirectional_astar.cc#L768-L778)):
   ```cpp
   if (cost_threshold_ != std::numeric_limits<float>::max() &&
       route_lower_bound > cost_threshold_) { return FormPath(...); }
   ```
 
-**Note:** textbook bidirectional A\* stops at first meeting. Valhalla keeps searching a configurable `threshold_delta` past it — this is why `/expansion` output sometimes shows edges being explored after a visible meet. It is not a bug; it compensates for the heuristic losing admissibility across shortcut boundaries.
+**Note:** textbook bidirectional A\* stops at first meeting. Valhalla keeps searching a configurable `threshold_delta` past it - this is why `/expansion` output sometimes shows edges being explored after a visible meet. It is not a bug; it compensates for the heuristic losing admissibility across shortcut boundaries.
 
 #### Hanoi concrete trace (from our own log)
 
@@ -232,7 +232,7 @@ step 5: FIRST CONNECTION (forward met reverse)
   labels so far: fwd=10253 rev=3522
   continues expanding: any edge with sortcost < 2206.199 could yield a better path
 ...
-step 6: TERMINATE — rev sortcost exceeds threshold
+step 6: TERMINATE - rev sortcost exceeds threshold
   rev sortcost = 2214.04 > threshold = 2206.20
 ...
 connections found: 20 | desired_paths: 1
@@ -247,7 +247,7 @@ connections found: 20 | desired_paths: 1
 - The search continues. In this trace, **20 candidate meetings** were found before the cheapest unexplored reverse edge exceeded the ceiling.
 - Only the best is kept. The other 19 would be returned if the request asked for alternates.
 
-### 4.2b REACH PRUNE — how Valhalla kills hopeless edges early
+### 4.2b REACH PRUNE - how Valhalla kills hopeless edges early
 
 Beyond meeting detection, bidirectional A\* aggressively prunes edges whose **optimistic lower bound** cannot beat the current `cost_threshold`. Our debug log shows 1,544 such prunes in a single 9.84 km route:
 
@@ -262,19 +262,19 @@ Beyond meeting detection, bidirectional A\* aggressively prunes edges whose **op
 lb = predecessor_cost + transition_cost + opposite_frontier_sortcost − heuristic
 ```
 
-In plain English: "Best case, this edge connects to the reverse frontier at the cheapest known reverse sortcost. If even that optimistic math is already above our threshold, skip it." This is why bidirectional scales — most edges near the frontier boundary are killed without ever being expanded.
+In plain English: "Best case, this edge connects to the reverse frontier at the cheapest known reverse sortcost. If even that optimistic math is already above our threshold, skip it." This is why bidirectional scales - most edges near the frontier boundary are killed without ever being expanded.
 
-Implementation lives in [`src/thor/bidirectional_astar.cc`](https://github.com/valhalla/valhalla/blob/master/src/thor/bidirectional_astar.cc) — search for `PruneEdgeByReach`. Note it only kicks in **after** the first meeting, because you need an opposite-side sortcost to prune against.
+Implementation lives in [`src/thor/bidirectional_astar.cc`](https://github.com/valhalla/valhalla/blob/master/src/thor/bidirectional_astar.cc) - search for `PruneEdgeByReach`. Note it only kicks in **after** the first meeting, because you need an opposite-side sortcost to prune against.
 
 ---
 
-### 4.3 HARD — Hierarchical Bidirectional A\* with Shortcuts
+### 4.3 HARD - Hierarchical Bidirectional A\* with Shortcuts
 
 This is how we route Hanoi → HCMC (~1,653 km) in under a second.
 
 Bidirectional alone would still explore too many side streets mid-country. The hierarchical tricks, in order:
 
-#### Trick 1 — Promote up, never down (usually)
+#### Trick 1 - Promote up, never down (usually)
 
 As each frontier moves away from its endpoint, it stops exploring L2, then L1.
 
@@ -287,7 +287,7 @@ inline bool StopExpanding(const HierarchyLimits& hl, const float dist) {
 }
 ```
 
-**Plain English:** "If we have taken too many upward transitions already AND we are still far from destination, stop expanding this level." The AND is the safety net — near the endpoint we always re-allow local streets so we can reach the actual drop-off address.
+**Plain English:** "If we have taken too many upward transitions already AND we are still far from destination, stop expanding this level." The AND is the safety net - near the endpoint we always re-allow local streets so we can reach the actual drop-off address.
 
 **From our log:**
 ```
@@ -295,7 +295,7 @@ inline bool StopExpanding(const HierarchyLimits& hl, const float dist) {
   meaning: forward exhausted L2 edges, promoting to higher levels only
 ```
 
-#### Trick 2 — Default limits
+#### Trick 2 - Default limits
 
 From [`valhalla/sif/hierarchylimits.h#L21-L29`](https://github.com/valhalla/valhalla/blob/master/valhalla/sif/hierarchylimits.h#L21-L29):
 
@@ -305,9 +305,9 @@ From [`valhalla/sif/hierarchylimits.h#L21-L29`](https://github.com/valhalla/valh
 | L1 (Arterial) | 400 | 100 km | 20 km |
 | L2 (Local) | 100 | 5 km | 5 km |
 
-**Key insight:** bidirectional shrinks the "always expand arterial" zone from 100 km down to 20 km. That is a big part of why bidirectional is faster — we bail out of arterials much sooner.
+**Key insight:** bidirectional shrinks the "always expand arterial" zone from 100 km down to 20 km. That is a big part of why bidirectional is faster - we bail out of arterials much sooner.
 
-#### Trick 3 — Shortcut edges on L0/L1
+#### Trick 3 - Shortcut edges on L0/L1
 
 A shortcut edge is a synthetic `DirectedEdge` that represents "traverse this chain of 12 real edges in one hop." It is created at tile-build time by the [Mjolnir](https://github.com/valhalla/valhalla/tree/master/src/mjolnir) preprocessor and used only by the router.
 
@@ -315,12 +315,12 @@ A shortcut edge is a synthetic `DirectedEdge` that represents "traverse this cha
 |---|---|---|
 | Source | OSM 1:1 | Generated during preprocessing |
 | Used for | Turn instructions | Fast traversal only |
-| Visible to Odin (the narrator)? | Yes | No — must be expanded back first |
+| Visible to Odin (the narrator)? | Yes | No - must be expanded back first |
 | Typical home | All levels | L0, L1 |
 
-#### Trick 4 — Recover shortcuts before narrating
+#### Trick 4 - Recover shortcuts before narrating
 
-The bidirectional path may include shortcut edges. We cannot tell the user "in 127 km, turn right" — we need every maneuver on the real OSM edges. So:
+The bidirectional path may include shortcut edges. We cannot tell the user "in 127 km, turn right" - we need every maneuver on the real OSM edges. So:
 
 - [`valhalla/baldr/graphreader.h#L713`](https://github.com/valhalla/valhalla/blob/master/valhalla/baldr/graphreader.h#L713) → `RecoverShortcut(GraphId)` expands one shortcut into its underlying edges.
 - Odin (the narrator module) only ever sees standard edges.
@@ -334,9 +334,9 @@ The bidirectional path may include shortcut edges. We cannot tell the user "in 1
 | Hanoi inner-city | 9.84 km | 254 | 31,812 | **125 : 1** | 7 (L0=1, L1=2, L2=4) |
 | HCMC → Hanoi | 1,653 km | 3,301 | 197,027 | **60 : 1** | 18 (L0=9, L1=5, L2=4) |
 
-**Counter-intuitive observation:** the long route has a better labels-per-edge ratio. L0 shortcut edges allow the search to jump 50–100 km per label, while the short urban route gets no such leverage — every neighbourhood street is one label. **Hierarchy plus shortcuts are worth more the longer the trip.**
+**Counter-intuitive observation:** the long route has a better labels-per-edge ratio. L0 shortcut edges allow the search to jump 50–100 km per label, while the short urban route gets no such leverage - every neighbourhood street is one label. **Hierarchy plus shortcuts are worth more the longer the trip.**
 
-Also notice: the long route touches 9 L0 tiles versus 1 for the short route. That is the highway network carrying the middle 1,400 km — where no L2 tile is loaded at all, because both frontiers stopped expanding L2 within 5 km of each endpoint.
+Also notice: the long route touches 9 L0 tiles versus 1 for the short route. That is the highway network carrying the middle 1,400 km - where no L2 tile is loaded at all, because both frontiers stopped expanding L2 within 5 km of each endpoint.
 
 #### End-to-end walkthrough of a long intercity request
 
@@ -353,11 +353,11 @@ Also notice: the long route touches 9 L0 tiles versus 1 for the short route. Tha
 
 ---
 
-### 4.4 The A\* Cost Factor — Why admissibility is global, not per-tile
+### 4.4 The A\* Cost Factor - Why admissibility is global, not per-tile
 
 The heuristic needs a scalar to convert "metres remaining" into "seconds remaining." That scalar is `AStarCostFactor()`:
 
-- **Contract:** [`valhalla/sif/dynamiccost.h`](https://github.com/valhalla/valhalla/blob/master/valhalla/sif/dynamiccost.h) — every costing model (auto, bicycle, pedestrian, truck, bus…) must implement it.
+- **Contract:** [`valhalla/sif/dynamiccost.h`](https://github.com/valhalla/valhalla/blob/master/valhalla/sif/dynamiccost.h) - every costing model (auto, bicycle, pedestrian, truck, bus…) must implement it.
 - **Auto costing:** [`src/sif/autocost.cc#L298-L300`](https://github.com/valhalla/valhalla/blob/master/src/sif/autocost.cc#L298-L300)
   ```cpp
   float AStarCostFactor() const override {
@@ -378,13 +378,13 @@ AStarCostFactor: 0.025714
 1. **Admissibility.** A\* is only guaranteed optimal if `h(n) ≤ true_cost(n → goal)` for every node. If we lowered the factor in a slow-traffic area, we would overestimate there and under-estimate elsewhere; crossing tiles would produce non-monotone `f`, which breaks the proof and in practice produces bad routes.
 2. **Stability across tile boundaries.** Using one global "best-case speed" keeps `h` smooth as the search jumps tiles.
 
-Traffic cannot be applied to the heuristic `h(n)` without breaking admissibility. Traffic is applied only in `g(n)` — the actual observed cost of the edges the search has settled. Section 5 describes how traffic enters `g(n)`.
+Traffic cannot be applied to the heuristic `h(n)` without breaking admissibility. Traffic is applied only in `g(n)` - the actual observed cost of the edges the search has settled. Section 5 describes how traffic enters `g(n)`.
 
 ---
 
 ### 4.5 Why `depart_at` / `arrive_by` forces unidirectional (the circular dependency)
 
-Time-dependent costing means: "the speed of this edge depends on when I reach it." Forward search knows this trivially — `seconds_from_now = accumulated_time_so_far`. But a **reverse** search starting at destination has a chicken-and-egg problem:
+Time-dependent costing means: "the speed of this edge depends on when I reach it." Forward search knows this trivially - `seconds_from_now = accumulated_time_so_far`. But a **reverse** search starting at destination has a chicken-and-egg problem:
 
 ```
 cost_of_edge(e) needs arrival_time(e)
@@ -397,13 +397,13 @@ Reverse cannot resolve this without assuming the final time, which defeats the p
 
 ---
 
-### 4.6 Understanding "total cost" — the number A\* actually sorts by
+### 4.6 Understanding "total cost" - the number A\* actually sorts by
 
 A common point of confusion in the debug logs is the difference between `cost` and `time`. This section clarifies the distinction.
 
 #### The rule in one sentence
 
-> **Cost is NOT time in seconds. Cost is "time plus penalties" — a synthetic number that Valhalla minimises to pick the most *preferred* route, not strictly the fastest.**
+> **Cost is NOT time in seconds. Cost is "time plus penalties" - a synthetic number that Valhalla minimises to pick the most *preferred* route, not strictly the fastest.**
 
 Two separate numbers live on every edge and path:
 
@@ -412,7 +412,7 @@ Two separate numbers live on every edge and path:
 | `secs` | Pure physical time. `length / speed`. | Displayed to the user as ETA. |
 | `cost` | `secs × factors + penalties`. An abstract "badness" score. | Priority queue. A\* pops the lowest `cost`. |
 
-They are deliberately different. If cost were equal to time, the router would always pick the fastest path even if it involved 40 turns through alleyways, private gates, and a toll road — all things users hate. Adding penalties to `cost` lets us tune *preferences* without lying about the ETA.
+They are deliberately different. If cost were equal to time, the router would always pick the fastest path even if it involved 40 turns through alleyways, private gates, and a toll road - all things users hate. Adding penalties to `cost` lets us tune *preferences* without lying about the ETA.
 
 #### The formula
 
@@ -460,11 +460,11 @@ The values our production service sends in the Loki request:
 | `service_penalty` | 75 | Service roads (parking-lot paths etc.) |
 | `private_access_penalty` | 450 | Private roads |
 | `destination_only_penalty` | 600 | "Residents only" streets |
-| `closure_factor` | 9 | Multiplier for closures — route through only if no alternative |
+| `closure_factor` | 9 | Multiplier for closures - route through only if no alternative |
 
 Reading these, you can see the design: the router will gladly add a minute to your ETA to avoid a toll-booth waste-of-time, skip a "residents only" cut-through, or detour around a closed road.
 
-#### Worked example 1 — a Hanoi turn (short edge)
+#### Worked example 1 - a Hanoi turn (short edge)
 
 From our debug log, edge #2 on the 9.84 km Hanoi route:
 
@@ -474,13 +474,13 @@ edge[2/254] 1/40245/146964 | edge_cost=12.600  edge_secs=1.246
 
 | What we see | Number | Interpretation |
 |-------------|--------|----------------|
-| `edge_secs` | 1.25 s | Physical time — this is an L1 arterial segment, traversed in 1.25 seconds |
-| `edge_cost` | 12.60 | Cost — roughly 10× the time |
+| `edge_secs` | 1.25 s | Physical time - this is an L1 arterial segment, traversed in 1.25 seconds |
+| `edge_cost` | 12.60 | Cost - roughly 10× the time |
 | `cost - secs` | ≈ 11.35 | ← This is the penalty bulk: likely `maneuver_penalty` (5) plus a turn-class penalty on the transition into this edge |
 
 **Takeaway:** the router pays "12.6 units" to make a small turn at the start of a short segment. The user sees 1.25 seconds of ETA for this edge, but A\* sees it as 10× more expensive because of the turn.
 
-#### Worked example 2 — a highway shortcut (long edge)
+#### Worked example 2 - a highway shortcut (long edge)
 
 From the long Hanoi→HCMC route:
 
@@ -491,11 +491,11 @@ running_total: cost=24335.89 secs=25055.22 dist=641418m
 
 | Observation | Why |
 |-------------|-----|
-| This specific edge shows 0 cost, 0 secs | It is a synthetic zero-length connector at a tile boundary. These exist in Valhalla's graph model — no time, no cost, no penalty. Safe to ignore. |
-| The running totals tell the real story | After 641 km: cost = 24,336, secs = 25,055. Ratio `cost/secs ≈ 0.97` — cost slightly LOWER than time. |
+| This specific edge shows 0 cost, 0 secs | It is a synthetic zero-length connector at a tile boundary. These exist in Valhalla's graph model - no time, no cost, no penalty. Safe to ignore. |
+| The running totals tell the real story | After 641 km: cost = 24,336, secs = 25,055. Ratio `cost/secs ≈ 0.97` - cost slightly LOWER than time. |
 | Why? | Highway edges get a `highway_factor` discount (we want to prefer highways), so each highway second costs about 0.97 units. |
 
-#### Worked example 3 — a penalty-heavy edge (edge #253)
+#### Worked example 3 - a penalty-heavy edge (edge #253)
 
 ```
 edge[253/254] 2/639062/86723 | edge_cost=108.0  edge_secs=5.02
@@ -508,22 +508,22 @@ edge[253/254] 2/639062/86723 | edge_cost=108.0  edge_secs=5.02
 
 That is roughly the signature of a **gate** (`gate_cost=30s + gate_penalty=300` → divided across the transition) or a **destination-only** segment (`destination_only_penalty = 600`). This is the kind of edge the router would avoid if any alternative existed.
 
-#### The overall cost/time ratio — what it tells you about the trip
+#### The overall cost/time ratio - what it tells you about the trip
 
 | Route | Total cost | Total time (s) | Ratio `cost/time` | What it means |
 |-------|-----------|----------------|-------------------|---------------|
-| Hanoi inner-city (9.84 km) | 1,786 | 1,120 | **1.59** | Urban: many turns, alleys, maneuver penalties — cost inflates |
+| Hanoi inner-city (9.84 km) | 1,786 | 1,120 | **1.59** | Urban: many turns, alleys, maneuver penalties - cost inflates |
 | Hanoi → HCMC (1,653 km) | 63,027 | 65,708 | **0.96** | Highway-dominated: highway_factor discount, few penalties |
 
-**This ratio is a diagnostic.** A ratio above 1.5 says "urban-heavy, lots of penalties." Below 1.0 says "highway-dominated." Anomalies (5.0+, for example) suggest the route had to route through something painful — a ferry, a restricted road, or a closure with `closure_factor = 9` applied.
+**This ratio is a diagnostic.** A ratio above 1.5 says "urban-heavy, lots of penalties." Below 1.0 says "highway-dominated." Anomalies (5.0+, for example) suggest the route had to route through something painful - a ferry, a restricted road, or a closure with `closure_factor = 9` applied.
 
 #### How to visualise cost in real time
 
 Recommendations for dashboards and operational views:
 
-1. **Do not colour edges by raw `cost`.** It scales with length and is unreadable — a 2 km highway segment and a 50 m alley could both be "cost = 50" for different reasons.
-2. **Colour by `cost / length`** (seconds-per-metre equivalent) — a normalised "badness per metre" that is comparable across edges.
-3. **Or colour by `speed`** — easier for non-engineering audiences to interpret.
+1. **Do not colour edges by raw `cost`.** It scales with length and is unreadable - a 2 km highway segment and a 50 m alley could both be "cost = 50" for different reasons.
+2. **Colour by `cost / length`** (seconds-per-metre equivalent) - a normalised "badness per metre" that is comparable across edges.
+3. **Or colour by `speed`** - easier for non-engineering audiences to interpret.
 4. **Query the `/expansion` endpoint** with `expansion_properties=["cost","duration","distance","edge_status","expansion_type"]` to get every edge the algorithm touched, with its cost, in GeoJSON.
 
 Example request:
@@ -545,7 +545,7 @@ Response is a FeatureCollection where every LineString has `properties.cost`, `p
 
 ---
 
-## 5. Live Traffic — `traffic.tar` and the 1-Hour Fade
+## 5. Live Traffic - `traffic.tar` and the 1-Hour Fade
 
 This section documents the live-traffic subsystem that is currently deployed in production.
 
@@ -556,11 +556,11 @@ This section documents the live-traffic subsystem that is currently deployed in 
 Each file:
 
 ```
-TrafficTileHeader  (32 bytes — sizeof(uint64_t) * 4)
-N × TrafficSpeed   (8 bytes each — sizeof(uint64_t))
+TrafficTileHeader  (32 bytes - sizeof(uint64_t) * 4)
+N × TrafficSpeed   (8 bytes each - sizeof(uint64_t))
 ```
 
-**Source:** [`valhalla/baldr/traffictile.h#L146-L150`](https://github.com/valhalla/valhalla/blob/master/valhalla/baldr/traffictile.h#L146-L150) — `static_assert`s that enforce these sizes. The code refuses to compile if they drift.
+**Source:** [`valhalla/baldr/traffictile.h#L146-L150`](https://github.com/valhalla/valhalla/blob/master/valhalla/baldr/traffictile.h#L146-L150) - `static_assert`s that enforce these sizes. The code refuses to compile if they drift.
 
 **Note:** the source-header comment calls the header "24 bytes," but the `static_assert` enforces `sizeof(uint64_t) * 4 = 32`. The assertion is authoritative; the comment is stale.
 
@@ -571,7 +571,7 @@ N × TrafficSpeed   (8 bytes each — sizeof(uint64_t))
 ```cpp
 struct TrafficTileHeader {
   uint64_t tile_id;
-  uint64_t last_update;          // seconds since epoch — freshness
+  uint64_t last_update;          // seconds since epoch - freshness
   uint32_t directed_edge_count;
   uint32_t traffic_tile_version;
   uint32_t spare2;
@@ -579,7 +579,7 @@ struct TrafficTileHeader {
 };
 ```
 
-`last_update` is how you monitor freshness — see §8.2.
+`last_update` is how you monitor freshness - see §8.2.
 
 ### 5.3 The `TrafficSpeed` bit-packed struct
 
@@ -601,7 +601,7 @@ struct TrafficSpeed {
 };
 ```
 
-One 64-bit word. An edge can be split into up to three subsegments, each with its own speed and congestion — essential for long arterials where the first kilometre crawls and the last kilometre is clear.
+One 64-bit word. An edge can be split into up to three subsegments, each with its own speed and congestion - essential for long arterials where the first kilometre crawls and the last kilometre is clear.
 
 **Why so much bit-packing?** `TrafficSpeed` is dereferenced inside the hottest inner loop of the router (`EdgeCost` → `GetSpeed`). Saving 8 bytes per edge × 1M edges per tile × 360 tiles amounts to roughly 2.8 GB of RAM for the Vietnam extract alone. The packed layout is necessary, not optional.
 
@@ -616,7 +616,7 @@ const volatile TrafficSpeed& trafficspeed(const uint32_t directed_edge_offset) c
 
 It is an **array index, not a lookup**. Edge #12345 in the routing tile corresponds to `TrafficSpeed[12345]` in the traffic tile. One-to-one, same ordering, same `GraphId → offset` arithmetic.
 
-### 5.5 Live updates without restart — the `mmap` + `volatile` trick
+### 5.5 Live updates without restart - the `mmap` + `volatile` trick
 
 See the `volatile` at [`valhalla/baldr/traffictile.h#L221-L222`](https://github.com/valhalla/valhalla/blob/master/valhalla/baldr/traffictile.h#L221-L222):
 
@@ -625,18 +625,18 @@ volatile TrafficTileHeader* header;
 volatile TrafficSpeed* speeds;
 ```
 
-`volatile` tells the compiler: "another thread or process may change this memory at any time — do not cache reads."
+`volatile` tells the compiler: "another thread or process may change this memory at any time - do not cache reads."
 
 **Flow:**
 
 1. The router process opens `traffic.tar` read-only via `mmap`.
 2. A separate traffic-updater process opens the same file writable.
 3. The updater writes new 8-byte `TrafficSpeed` values directly into the mapped pages.
-4. The kernel makes those pages visible to the router **immediately** — no reload, no signal, no restart.
+4. The kernel makes those pages visible to the router **immediately** - no reload, no signal, no restart.
 
 This is why the ingestion pipeline can push updates at 1 Hz without the routing service needing to restart. The PR that introduced this mechanism: [PR #2268 "Support live traffic data"](https://github.com/valhalla/valhalla/pull/2268).
 
-### 5.6 Blend formula — the heart of the thing
+### 5.6 Blend formula - the heart of the thing
 
 [`valhalla/baldr/graphtile.h#L860-L863`](https://github.com/valhalla/valhalla/blob/master/valhalla/baldr/graphtile.h#L860-L863)
 
@@ -669,12 +669,12 @@ float live_traffic_multiplier =
 
 | Time to reach edge | `live_weight` | Math | Final speed |
 |---|---|---|---|
-| Now (0 s) | 1.00 | 15×1.0 + 50×0.0 | **15 kph** — 100% live |
-| 30 min (1800 s) | 0.50 | 15×0.5 + 50×0.5 | **32.5 kph** — 50/50 |
+| Now (0 s) | 1.00 | 15×1.0 + 50×0.0 | **15 kph** - 100% live |
+| 30 min (1800 s) | 0.50 | 15×0.5 + 50×0.5 | **32.5 kph** - 50/50 |
 | 45 min (2700 s) | 0.25 | 15×0.25 + 50×0.75 | **41.25 kph** |
-| **1 hr (3600 s)** | **0.00** | 15×0.0 + 50×1.0 | **50 kph — 100% historical** |
-| 8 hr | 0.00 | — | 50 kph |
-| 3 days | 0.00 | — | 50 kph |
+| **1 hr (3600 s)** | **0.00** | 15×0.0 + 50×1.0 | **50 kph - 100% historical** |
+| 8 hr | 0.00 | - | 50 kph |
+| 3 days | 0.00 | - | 50 kph |
 
 **Rule:** any edge the router expects to reach more than 60 minutes from `now` receives zero live-traffic influence. Speed is then purely historical or predicted. One compile-time constant (`1/3600`) governs this. Changing it has admissibility implications, as it biases `h(n)` indirectly via the cost surface.
 
@@ -682,16 +682,16 @@ float live_traffic_multiplier =
 
 [`valhalla/baldr/graphtile.h#L857-L876`](https://github.com/valhalla/valhalla/blob/master/valhalla/baldr/graphtile.h#L857-L876). Priority order:
 
-1. **Predicted speed** — if `has_predicted_speed()` is true and a time-of-week was passed, use the predicted profile for that hour-of-week.
-2. **Constrained flow** — 7am–7pm bucket, otherwise:
-3. **Free flow** — 7pm–7am bucket.
-4. **Base speed** on the `DirectedEdge` itself — baked from OSM `maxspeed` at tile-build time.
+1. **Predicted speed** - if `has_predicted_speed()` is true and a time-of-week was passed, use the predicted profile for that hour-of-week.
+2. **Constrained flow** - 7am–7pm bucket, otherwise:
+3. **Free flow** - 7pm–7am bucket.
+4. **Base speed** on the `DirectedEdge` itself - baked from OSM `maxspeed` at tile-build time.
 
 ### 5.9 Gotchas
 
 **5.9.1 `DateTimeType` enum values** ([`proto/options.proto#L415-L421`](https://github.com/valhalla/valhalla/blob/master/proto/options.proto#L415-L421)):
 
-- `0 = no_time` — zero is not "current"; it means "do not use time at all"
+- `0 = no_time` - zero is not "current"; it means "do not use time at all"
 - `1 = current`
 - `2 = depart_at`
 - `3 = arrive_by`
@@ -703,19 +703,19 @@ Passing `date_time_type = 0` results in **no live traffic, no predicted, only co
 
 **5.9.3 `flow_mask`.** The production Loki request sets `flow_mask: 3`, a bitfield meaning `CURRENT | PREDICTED`. Setting it to `0` disables live traffic for that request; useful for A/B comparison.
 
-### 5.10 The known bug — Issue #5616 (scope is narrower than it first appears)
+### 5.10 The known bug - Issue #5616 (scope is narrower than it first appears)
 
 There are two separate pieces of evidence, and they have to be reconciled carefully.
 
-**Evidence 1 — the docstring.** In [`valhalla/baldr/graphtile.h#L788-L793`](https://github.com/valhalla/valhalla/blob/master/valhalla/baldr/graphtile.h#L788-L793) the `seconds_from_now` parameter of the speed lookup is documented as:
+**Evidence 1 - the docstring.** In [`valhalla/baldr/graphtile.h#L788-L793`](https://github.com/valhalla/valhalla/blob/master/valhalla/baldr/graphtile.h#L788-L793) the `seconds_from_now` parameter of the speed lookup is documented as:
 
 > "Absolute number of seconds from now till the moment the edge is passed. Be careful when setting the value in reverse direction algorithms to use proper value. It affects the percentage of live-traffic usage on the edge. The bigger `seconds_from_now` is set the less percentage is taken. **Currently this parameter is set to 0 when building a route with reverse and bidirectional a\*.**"
 
-**Evidence 2 — the code.** In [`src/thor/bidirectional_astar.cc`](https://github.com/valhalla/valhalla/blob/master/src/thor/bidirectional_astar.cc) the reverse expansion DOES advance time via `time_info.reverse(pred.cost().secs, …)` and passes the updated `time_info` into `EdgeCost`. [`valhalla/baldr/time_info.h#L212-L250`](https://github.com/valhalla/valhalla/blob/master/valhalla/baldr/time_info.h#L212-L250) confirms `reverse()` subtracts the offset from `seconds_from_now` (with a sign bit for past/future).
+**Evidence 2 - the code.** In [`src/thor/bidirectional_astar.cc`](https://github.com/valhalla/valhalla/blob/master/src/thor/bidirectional_astar.cc) the reverse expansion DOES advance time via `time_info.reverse(pred.cost().secs, …)` and passes the updated `time_info` into `EdgeCost`. [`valhalla/baldr/time_info.h#L212-L250`](https://github.com/valhalla/valhalla/blob/master/valhalla/baldr/time_info.h#L212-L250) confirms `reverse()` subtracts the offset from `seconds_from_now` (with a sign bit for past/future).
 
-**The reconciliation** (important — do not skip this): the reverse tree's TimeInfo is constructed from the *destination* location ([`bidirectional_astar.cc#L546-L561`](https://github.com/valhalla/valhalla/blob/master/src/thor/bidirectional_astar.cc#L546-L561)). In a typical Valhalla request the destination has no `date_time` field set — only the origin does. `TimeInfo::make(destination, …)` therefore starts the reverse tree with `seconds_from_now = 0` (wall-clock now). The `.reverse()` method then subtracts `pred.cost().secs` from that initial 0, producing a small-magnitude value that, once the fade treats it as `|sfn|`, behaves close to 0 for the entire reverse frontier. **That is what the docstring is summarising.** The forward tree is unaffected.
+**The reconciliation** (important - do not skip this): the reverse tree's TimeInfo is constructed from the *destination* location ([`bidirectional_astar.cc#L546-L561`](https://github.com/valhalla/valhalla/blob/master/src/thor/bidirectional_astar.cc#L546-L561)). In a typical Valhalla request the destination has no `date_time` field set - only the origin does. `TimeInfo::make(destination, …)` therefore starts the reverse tree with `seconds_from_now = 0` (wall-clock now). The `.reverse()` method then subtracts `pred.cost().secs` from that initial 0, producing a small-magnitude value that, once the fade treats it as `|sfn|`, behaves close to 0 for the entire reverse frontier. **That is what the docstring is summarising.** The forward tree is unaffected.
 
-**Evidence 3 — Issue #5616.** [Issue #5616](https://github.com/valhalla/valhalla/issues/5616) ("Bidirectional A\* will use live traffic on the reverse expansion, regardless of date time", opened Oct 17 2025 by `chrstnbwnkl`) documents the user-visible symptom. The reporter's full quote, verbatim:
+**Evidence 3 - Issue #5616.** [Issue #5616](https://github.com/valhalla/valhalla/issues/5616) ("Bidirectional A\* will use live traffic on the reverse expansion, regardless of date time", opened Oct 17 2025 by `chrstnbwnkl`) documents the user-visible symptom. The reporter's full quote, verbatim:
 
 > "Assuming you are planning a route with a departure time more than an hour in the future: even if Valhalla has live traffic hot and loaded, unidirectional A\* won't use those speeds anywhere, since the time exceeds the live speed fading threshold. If you force Valhalla to use the bidirectional algorithm instead, the reverse expansion will use an invalid `TimeInfo` object which has `seconds_from_now` set to 0, and so it gets the unfaded live speed."
 
@@ -729,20 +729,20 @@ Things the reporter does **not** say:
 | Algorithm | Forward side | Reverse side | Impact on us |
 |-----------|--------------|--------------|--------------|
 | `timedep_forward` (unidirectional, used for `depart_at`) | `sfn` advances correctly | n/a | Fade works. |
-| `timedep_reverse` (unidirectional reverse, used for `arrive_by`) | n/a | same construction issue as bidir reverse — the docstring's "reverse" caveat also applies here | Fade does not work on arrive_by. |
+| `timedep_reverse` (unidirectional reverse, used for `arrive_by`) | n/a | same construction issue as bidir reverse - the docstring's "reverse" caveat also applies here | Fade does not work on arrive_by. |
 | `bidir_astar` (default when no `date_time` is set, or when `invariant`) | `sfn` advances correctly | starts at 0, barely advances | Reverse frontier sees 100% live. |
 
 **Important note:** [`route_action.cc::get_path_algorithm` lines 377–448](https://github.com/valhalla/valhalla/blob/master/src/thor/route_action.cc#L377-L448) routes `depart_at` with an origin `date_time` to `timedep_forward`, not to bidirectional. Bidirectional is only the default for requests where `date_time` is empty or `invariant` is set, or when the client explicitly forces it via `prioritize_bidirectional`.
 
-No official fix has been merged. The reporter's suggested workaround — drop the `current` flow bit — costs live-closure information.
+No official fix has been merged. The reporter's suggested workaround - drop the `current` flow bit - costs live-closure information.
 
-### 5.11 Exposure analysis — a 50-minute production route, end-to-end
+### 5.11 Exposure analysis - a 50-minute production route, end-to-end
 
 This section walks a concrete 50-minute production route end-to-end, with every claim backed by a direct line-of-code link in the open-source repository. The goal is to establish precisely whether and when the live-traffic bug affects our deployment.
 
 **Production request shape** (confirmed against the client source): the Go client sends `{"date_time": {"type": 1, "value": "<now formatted as ISO minutes>"}}` on every route request. To understand what Valhalla does with that input, an off-by-one between the JSON wire enum and the internal proto enum must be unpacked first.
 
-#### Step 0 — the JSON-vs-proto enum shift
+#### Step 0 - the JSON-vs-proto enum shift
 
 The HTTP/JSON API and the internal proto enum use **different numbering**. Valhalla's JSON parser at [`src/worker.cc#L830-L832`](https://github.com/valhalla/valhalla/blob/master/src/worker.cc#L830-L832) reads the JSON `date_time.type` and adds 1 before casting into the proto:
 
@@ -778,12 +778,12 @@ Net effect per mode:
 
 | Proto type | Server uses your `value` string? |
 |---|---|
-| `current` | No — overwritten to `system_clock::now()` |
-| `depart_at` | Yes — must be valid ISO, else exception 162 |
-| `arrive_by` | Yes — same rule |
-| `invariant` | Yes — same rule |
+| `current` | No - overwritten to `system_clock::now()` |
+| `depart_at` | Yes - must be valid ISO, else exception 162 |
+| `arrive_by` | Yes - same rule |
+| `invariant` | Yes - same rule |
 
-#### Step 0b — what this means for the Go client
+#### Step 0b - what this means for the Go client
 
 The current Go enum:
 
@@ -794,13 +794,13 @@ SpecifiedArrival   TravelTimeType = 2
 InvariantSpecified TravelTimeType = 3
 ```
 
-These values map to the JSON API, not the proto. The naming is correct against the JSON layer: wire `1` = `SpecifiedDeparture` = JSON-level `depart_at`, which the parser then shifts to proto `depart_at = 2`. The naming is not incorrect — the two-layer design is simply easy to misread.
+These values map to the JSON API, not the proto. The naming is correct against the JSON layer: wire `1` = `SpecifiedDeparture` = JSON-level `depart_at`, which the parser then shifts to proto `depart_at = 2`. The naming is not incorrect - the two-layer design is simply easy to misread.
 
 The client always sends wire `1` (`SpecifiedDeparture`) with `Value = time.Now()` (per an in-code comment: `// hotfix: seem departureTime always nil`). From Valhalla's perspective this is therefore a `depart_at` request with a timestamp equal to wall-clock now. This is **not** the same as `current` on the wire; it only behaves the same because the value happens to be now.
 
 **Production request shape, restated precisely:** proto `depart_at = 2`, `value = ISO-minute string of wall-clock now`, via JSON wire `type=1`.
 
-#### Step 1 — which algorithm does Valhalla actually run?
+#### Step 1 - which algorithm does Valhalla actually run?
 
 The path-algorithm decision lives in [`src/thor/route_action.cc#L409-L418`](https://github.com/valhalla/valhalla/blob/master/src/thor/route_action.cc#L409-L418). Verbatim (master line numbers):
 
@@ -828,7 +828,7 @@ Evidence-grounded, this gives a hard split by route length:
 
 A 50-minute drive is 30–80 km of beeline distance, well inside the "< 500 km" band. **These routes run on `timedep_forward`, not bidirectional.**
 
-#### Step 2 — how fade behaves in `timedep_forward` (Case A)
+#### Step 2 - how fade behaves in `timedep_forward` (Case A)
 
 In unidirectional forward mode, `TimeInfo` is built from the origin's `date_time` (populated with the production timestamp) in [`valhalla/baldr/time_info.h#L64-L85`](https://github.com/valhalla/valhalla/blob/master/valhalla/baldr/time_info.h#L64-L85). Because `date_time` is non-empty, `TimeInfo::make` returns a **valid** TimeInfo (L70-L71: the early `invalid()` return is skipped).
 
@@ -854,7 +854,7 @@ Put together, for a 50-minute trip (3,000 s end-to-end):
 
 This is the textbook behaviour the fade was designed for, and is what our 50-minute production routes currently receive.
 
-#### Step 3 — where the #5616 bug lives, and when it applies
+#### Step 3 - where the #5616 bug lives, and when it applies
 
 The bug has two pieces of evidence, which have to be read together:
 
@@ -870,11 +870,11 @@ Mapping that to our production:
 |--------------|-----------|--------------------|
 | `date_time.type=1`, beeline < 500 km (typical ride) | `timedep_forward` | **No.** Fade works correctly. |
 | `date_time.type=1`, beeline ≥ 500 km (long intercity) | `bidir_astar` via fallback at [L416](https://github.com/valhalla/valhalla/blob/master/src/thor/route_action.cc#L416) | **Yes.** Warning 402 emitted; reverse frontier uses un-faded live traffic. |
-| `date_time.type=3` (`arrive_by`) — not currently used in production | `timedep_reverse` | **Yes.** Same reverse-side bug per docstring. |
+| `date_time.type=3` (`arrive_by`) - not currently used in production | `timedep_reverse` | **Yes.** Same reverse-side bug per docstring. |
 | No `date_time` set at all (misconfigured caller) | `bidir_astar` default | **Yes.** |
 | `date_time.type=4` (`invariant`) | `bidir_astar` | **Yes.** |
 
-#### Step 4 — what the bug looks like in practice (Case B, beeline ≥ 500 km)
+#### Step 4 - what the bug looks like in practice (Case B, beeline ≥ 500 km)
 
 When the request falls through to `bidir_astar`, the reverse `TimeInfo` is constructed from the destination ([`src/thor/bidirectional_astar.cc#L546-L561`](https://github.com/valhalla/valhalla/blob/master/src/thor/bidirectional_astar.cc#L546-L561)). In our request shape the destination has no `date_time` field, which sends `TimeInfo::make` to the invalid branch at [`time_info.h#L70-L71`](https://github.com/valhalla/valhalla/blob/master/valhalla/baldr/time_info.h#L70-L71). An invalid TimeInfo has `seconds_from_now = 0`, and `.reverse()` early-returns without advancing it (see the `if (!valid) return *this;` guard at the top of [`reverse()` L212-L214](https://github.com/valhalla/valhalla/blob/master/valhalla/baldr/time_info.h#L212-L214)).
 
@@ -882,7 +882,7 @@ Net effect on the reverse frontier: `seconds_from_now = 0` on every edge, so `li
 
 For a representative HCMC ↔ Hanoi 1,653 km route, the reverse frontier settles the entire back half. That back half is priced with 100% live traffic as if the current snapshot persists for the full 18-hour drive. On a stable-traffic day this is harmless; during a rush-hour snapshot it will systematically bias the ETA.
 
-#### Step 5 — conclusions
+#### Step 5 - conclusions
 
 **For the 50-minute case:** no exposure. The request runs `timedep_forward`, `seconds_from_now` advances correctly, and the fade tapers from 1.00 at origin to 0.17 near the end. No reverse frontier is involved.
 
@@ -911,7 +911,7 @@ Mitigations 1 and 2 address the majority of the exposure at low engineering cost
 
 ---
 
-### 5.12 Algorithm-selection reference — `/route` vs `/sources_to_targets`
+### 5.12 Algorithm-selection reference - `/route` vs `/sources_to_targets`
 
 One-page reference: for every API endpoint and input shape, the exact algorithm selected and its exposure to issue #5616. Every row is verified against master; every line number is a direct link into the source.
 
@@ -930,22 +930,22 @@ Function: `add_date_to_locations()` in [`src/worker.cc#L111-L145`](https://githu
 | `sources_to_targets` | `arrive_by` | **all targets** | [`src/worker.cc#L133-L139`](https://github.com/valhalla/valhalla/blob/master/src/worker.cc#L133-L139) |
 | `sources_to_targets` | anything else | **all sources** | [`src/worker.cc#L133-L139`](https://github.com/valhalla/valhalla/blob/master/src/worker.cc#L133-L139) |
 
-Reminder of the JSON→proto enum shift (fully documented in §5.11 Step 0): the JSON wire's `date_time.type = 1` is converted to proto `depart_at = 2` at [`src/worker.cc#L830-L832`](https://github.com/valhalla/valhalla/blob/master/src/worker.cc#L830-L832). Our production request therefore enters the `depart_at` row above — origin (or all sources) receives the user's timestamp.
+Reminder of the JSON→proto enum shift (fully documented in §5.11 Step 0): the JSON wire's `date_time.type = 1` is converted to proto `depart_at = 2` at [`src/worker.cc#L830-L832`](https://github.com/valhalla/valhalla/blob/master/src/worker.cc#L830-L832). Our production request therefore enters the `depart_at` row above - origin (or all sources) receives the user's timestamp.
 
-#### 5.12.1 `/route` — `thor_worker_t::get_path_algorithm()`
+#### 5.12.1 `/route` - `thor_worker_t::get_path_algorithm()`
 
 Source function: [`src/thor/route_action.cc#L377-L449`](https://github.com/valhalla/valhalla/blob/master/src/thor/route_action.cc#L377-L449). Branches evaluated in order; first match wins.
 
 | # | Costing / input condition | Controlling logic (master source) | Algorithm picked | Affected by #5616? | Evidence |
 |---|---|---|---|---|---|
-| 1 | `costing == "multimodal"` or `"transit"` | `if (routetype == "multimodal" \|\| routetype == "transit") return &multi_modal_transit;` | `multi_modal_transit` | No — separate code path, not bidirectional | [`route_action.cc#L394`](https://github.com/valhalla/valhalla/blob/master/src/thor/route_action.cc#L394) |
+| 1 | `costing == "multimodal"` or `"transit"` | `if (routetype == "multimodal" \|\| routetype == "transit") return &multi_modal_transit;` | `multi_modal_transit` | No - separate code path, not bidirectional | [`route_action.cc#L394`](https://github.com/valhalla/valhalla/blob/master/src/thor/route_action.cc#L394) |
 | 2 | `costing == "auto_pedestrian"` | `if (routetype == "auto_pedestrian") return &multimodal_astar;` | `multimodal_astar` | No | [`route_action.cc#L398`](https://github.com/valhalla/valhalla/blob/master/src/thor/route_action.cc#L398) |
 | 3 | `costing == "bikeshare"` | `if (routetype == "bikeshare") return &multimodal_astar;` | `multimodal_astar` | No | [`route_action.cc#L403`](https://github.com/valhalla/valhalla/blob/master/src/thor/route_action.cc#L403) |
-| 4 | `origin.date_time()` non-empty AND `date_time_type != invariant` AND `!prioritize_bidirectional` (gated at [`L409-L410`](https://github.com/valhalla/valhalla/blob/master/src/thor/route_action.cc#L409-L410)) AND beeline `< max_timedep_distance` (500 km) | distance gate `if (ll1.Distance(ll2) < max_timedep_distance)` → `return &timedep_forward;` | `timedep_forward` | **No** — unidirectional forward expansion, time advances correctly via `TimeInfo::forward()` | [`route_action.cc#L413`](https://github.com/valhalla/valhalla/blob/master/src/thor/route_action.cc#L413) (gate) + [`#L414`](https://github.com/valhalla/valhalla/blob/master/src/thor/route_action.cc#L414) (return) |
-| 5 | Same origin-side gate as row 4 but beeline `≥ max_timedep_distance` | `else { add_warning(request, 402); }` — no return, falls through to row 8 | (warning 402, then `bidir_astar`) | **Yes** (via fall-through to row 8) | [`route_action.cc#L416`](https://github.com/valhalla/valhalla/blob/master/src/thor/route_action.cc#L416) |
-| 6 | `destination.date_time()` non-empty AND `date_time_type != invariant` (gated at [`L422`](https://github.com/valhalla/valhalla/blob/master/src/thor/route_action.cc#L422)) AND beeline `< max_timedep_distance` | distance gate `if (ll1.Distance(ll2) < max_timedep_distance)` → `return &timedep_reverse;` | `timedep_reverse` | **No** — unidirectional reverse expansion, time tracked via `TimeInfo::reverse()` | [`route_action.cc#L425`](https://github.com/valhalla/valhalla/blob/master/src/thor/route_action.cc#L425) (gate) + [`#L426`](https://github.com/valhalla/valhalla/blob/master/src/thor/route_action.cc#L426) (return) |
+| 4 | `origin.date_time()` non-empty AND `date_time_type != invariant` AND `!prioritize_bidirectional` (gated at [`L409-L410`](https://github.com/valhalla/valhalla/blob/master/src/thor/route_action.cc#L409-L410)) AND beeline `< max_timedep_distance` (500 km) | distance gate `if (ll1.Distance(ll2) < max_timedep_distance)` → `return &timedep_forward;` | `timedep_forward` | **No** - unidirectional forward expansion, time advances correctly via `TimeInfo::forward()` | [`route_action.cc#L413`](https://github.com/valhalla/valhalla/blob/master/src/thor/route_action.cc#L413) (gate) + [`#L414`](https://github.com/valhalla/valhalla/blob/master/src/thor/route_action.cc#L414) (return) |
+| 5 | Same origin-side gate as row 4 but beeline `≥ max_timedep_distance` | `else { add_warning(request, 402); }` - no return, falls through to row 8 | (warning 402, then `bidir_astar`) | **Yes** (via fall-through to row 8) | [`route_action.cc#L416`](https://github.com/valhalla/valhalla/blob/master/src/thor/route_action.cc#L416) |
+| 6 | `destination.date_time()` non-empty AND `date_time_type != invariant` (gated at [`L422`](https://github.com/valhalla/valhalla/blob/master/src/thor/route_action.cc#L422)) AND beeline `< max_timedep_distance` | distance gate `if (ll1.Distance(ll2) < max_timedep_distance)` → `return &timedep_reverse;` | `timedep_reverse` | **No** - unidirectional reverse expansion, time tracked via `TimeInfo::reverse()` | [`route_action.cc#L425`](https://github.com/valhalla/valhalla/blob/master/src/thor/route_action.cc#L425) (gate) + [`#L426`](https://github.com/valhalla/valhalla/blob/master/src/thor/route_action.cc#L426) (return) |
 | 7 | Trivial connection: any origin-edge and destination-edge share a graph id or are directly connected | `if (same_graph_id \|\| are_connected) return &timedep_forward;` | `timedep_forward` | No | [`route_action.cc#L441`](https://github.com/valhalla/valhalla/blob/master/src/thor/route_action.cc#L441) (gate) + [`#L442`](https://github.com/valhalla/valhalla/blob/master/src/thor/route_action.cc#L442) (return) |
-| 8 | Default (no `date_time`, or `invariant`, or `prioritize_bidirectional=true`, or the rows above fell through) | `return &bidir_astar;` | `bidir_astar` | **Yes** — #5616 "Bidirectional A* will use live traffic on the reverse expansion, regardless of date time" | [`route_action.cc#L448`](https://github.com/valhalla/valhalla/blob/master/src/thor/route_action.cc#L448) |
+| 8 | Default (no `date_time`, or `invariant`, or `prioritize_bidirectional=true`, or the rows above fell through) | `return &bidir_astar;` | `bidir_astar` | **Yes** - #5616 "Bidirectional A* will use live traffic on the reverse expansion, regardless of date time" | [`route_action.cc#L448`](https://github.com/valhalla/valhalla/blob/master/src/thor/route_action.cc#L448) |
 
 **Production path (`date_time.type=1 (JSON) → depart_at, value=now`):**
 
@@ -954,7 +954,7 @@ Source function: [`src/thor/route_action.cc#L377-L449`](https://github.com/valha
 - Beeline `< 500 km` → **row 4 → `timedep_forward`, not affected by #5616.**
 - Beeline `≥ 500 km` → **row 5 → warning 402 → falls through to row 8 → `bidir_astar`, affected by #5616.**
 
-#### 5.12.2 `/sources_to_targets` — `thor_worker_t::get_matrix_algorithm()`
+#### 5.12.2 `/sources_to_targets` - `thor_worker_t::get_matrix_algorithm()`
 
 Source function: [`src/thor/matrix_action.cc#L32-L86`](https://github.com/valhalla/valhalla/blob/master/src/thor/matrix_action.cc#L32-L86). `has_time` is the return value of `check_matrix_time()` at [`valhalla/thor/matrixalgorithm.h#L226-L253`](https://github.com/valhalla/valhalla/blob/master/valhalla/thor/matrixalgorithm.h#L226-L253) (true iff at least one source or target has `date_time` set). `source_to_target_algorithm` is a server-config flag (default `select_optimal`, evidence at [`src/thor/worker.cc#L78`](https://github.com/valhalla/valhalla/blob/master/src/thor/worker.cc#L78) and [`src/thor/worker.cc#L96-L100`](https://github.com/valhalla/valhalla/blob/master/src/thor/worker.cc#L96-L100)).
 
@@ -962,18 +962,18 @@ Branches evaluated in order.
 
 | # | Costing / input condition | Controlling logic (master source) | Algorithm picked | Affected by #5616? | Evidence |
 |---|---|---|---|---|---|
-| 1 | `costing == "bikeshare"` | `if (costing == "bikeshare") return &time_distance_bss_matrix_;` | `time_distance_bss_matrix_` | No — unidirectional | [`matrix_action.cc#L35`](https://github.com/valhalla/valhalla/blob/master/src/thor/matrix_action.cc#L35) |
-| 2 | `has_time == true` AND `!prioritize_bidirectional` AND server config `!= COST_MATRIX` | gate [`L68-L69`](https://github.com/valhalla/valhalla/blob/master/src/thor/matrix_action.cc#L68-L69) → `return &time_distance_matrix_;` | `time_distance_matrix_` | No — unidirectional | [`matrix_action.cc#L70`](https://github.com/valhalla/valhalla/blob/master/src/thor/matrix_action.cc#L70) |
-| 3 | `has_time == true` AND `prioritize_bidirectional` AND server config `!= TIME_DISTANCE_MATRIX` | gate [`L71-L72`](https://github.com/valhalla/valhalla/blob/master/src/thor/matrix_action.cc#L71-L72) → `return &costmatrix_;` | `costmatrix_` | **Same class of bug as #5616** — reverse expansion uses `TimeInfo::invalid()` (see note below). Issue doesn't name it explicitly; code inspection confirms. | [`matrix_action.cc#L73`](https://github.com/valhalla/valhalla/blob/master/src/thor/matrix_action.cc#L73) |
+| 1 | `costing == "bikeshare"` | `if (costing == "bikeshare") return &time_distance_bss_matrix_;` | `time_distance_bss_matrix_` | No - unidirectional | [`matrix_action.cc#L35`](https://github.com/valhalla/valhalla/blob/master/src/thor/matrix_action.cc#L35) |
+| 2 | `has_time == true` AND `!prioritize_bidirectional` AND server config `!= COST_MATRIX` | gate [`L68-L69`](https://github.com/valhalla/valhalla/blob/master/src/thor/matrix_action.cc#L68-L69) → `return &time_distance_matrix_;` | `time_distance_matrix_` | No - unidirectional | [`matrix_action.cc#L70`](https://github.com/valhalla/valhalla/blob/master/src/thor/matrix_action.cc#L70) |
+| 3 | `has_time == true` AND `prioritize_bidirectional` AND server config `!= TIME_DISTANCE_MATRIX` | gate [`L71-L72`](https://github.com/valhalla/valhalla/blob/master/src/thor/matrix_action.cc#L71-L72) → `return &costmatrix_;` | `costmatrix_` | **Same class of bug as #5616** - reverse expansion uses `TimeInfo::invalid()` (see note below). Issue doesn't name it explicitly; code inspection confirms. | [`matrix_action.cc#L73`](https://github.com/valhalla/valhalla/blob/master/src/thor/matrix_action.cc#L73) |
 | 4 | `config_algo == CostMatrix` (no `has_time`, or `SELECT_OPTIMAL`+auto+large, or explicit `COST_MATRIX` config) | gate [`L74`](https://github.com/valhalla/valhalla/blob/master/src/thor/matrix_action.cc#L74) → `return &costmatrix_;`; adds warning 301 if `has_time && !prioritize_bidirectional` | `costmatrix_` | If `has_time=true`: same class of bug as #5616 on reverse side. If `has_time=false`: no live-traffic+time conflict by definition. | [`matrix_action.cc#L78`](https://github.com/valhalla/valhalla/blob/master/src/thor/matrix_action.cc#L78) |
-| 5 | Default fallthrough — config-forced `TIME_DISTANCE_MATRIX` | `else { … return &time_distance_matrix_; }`; adds warning 300 if `has_time && prioritize_bidirectional` | `time_distance_matrix_` | No — unidirectional | [`matrix_action.cc#L84`](https://github.com/valhalla/valhalla/blob/master/src/thor/matrix_action.cc#L84) |
+| 5 | Default fallthrough - config-forced `TIME_DISTANCE_MATRIX` | `else { … return &time_distance_matrix_; }`; adds warning 300 if `has_time && prioritize_bidirectional` | `time_distance_matrix_` | No - unidirectional | [`matrix_action.cc#L84`](https://github.com/valhalla/valhalla/blob/master/src/thor/matrix_action.cc#L84) |
 
-**Why `costmatrix_` sits in the #5616 family** — evidence in code, not in the issue body:
+**Why `costmatrix_` sits in the #5616 family** - evidence in code, not in the issue body:
 
 - `CostMatrix::SourceToTarget()` runs two concurrent frontiers. The reverse-frontier call is made without a `TimeInfo` argument: `Expand<MatrixExpansionType::reverse>(i, n, graphreader, request.options());` at [`src/thor/costmatrix.cc#L216`](https://github.com/valhalla/valhalla/blob/master/src/thor/costmatrix.cc#L216).
 - The declaration defaults the missing parameter to `TimeInfo::invalid()`: [`valhalla/thor/costmatrix.h#L200-L205`](https://github.com/valhalla/valhalla/blob/master/valhalla/thor/costmatrix.h#L200-L205) (`const baldr::TimeInfo& time_info = baldr::TimeInfo::invalid()`).
 - The forward-frontier call passes the real per-source `TimeInfo`: [`src/thor/costmatrix.cc#L251-L252`](https://github.com/valhalla/valhalla/blob/master/src/thor/costmatrix.cc#L251-L252).
-- Inside `Expand`, `time_info.reverse(...)` early-returns unchanged when `!valid`: [`valhalla/baldr/time_info.h#L213-L214`](https://github.com/valhalla/valhalla/blob/master/valhalla/baldr/time_info.h#L213-L214). Result: reverse-frontier `seconds_from_now == 0` on every edge, so the live-traffic fade multiplier stays at `1.0` (full live blend) regardless of how far in the future the caller asked for — exactly the pattern #5616 describes for `bidir_astar`.
+- Inside `Expand`, `time_info.reverse(...)` early-returns unchanged when `!valid`: [`valhalla/baldr/time_info.h#L213-L214`](https://github.com/valhalla/valhalla/blob/master/valhalla/baldr/time_info.h#L213-L214). Result: reverse-frontier `seconds_from_now == 0` on every edge, so the live-traffic fade multiplier stays at `1.0` (full live blend) regardless of how far in the future the caller asked for - exactly the pattern #5616 describes for `bidir_astar`.
 
 **Production path (`date_time.type=1 (JSON) → depart_at, value=now`, default server config `source_to_target_algorithm=select_optimal`, `prioritize_bidirectional=false`):**
 
@@ -981,9 +981,9 @@ Branches evaluated in order.
 - `check_matrix_time()` returns `true` (at least one source has `date_time`) → `has_time = true`.
 - Row 2 of §5.12.2 matches → **`time_distance_matrix_`, not affected by #5616.**
 - If `prioritize_bidirectional=true` is set on the request, row 3 fires → **`costmatrix_`, same-class exposure.**
-- A matrix request without any `date_time` triggers row 4 → `costmatrix_` with `has_time=false`; the reverse-side-invalid-TimeInfo behaviour then becomes moot (live fade uses `seconds_from_now=0`, which is equivalent to the default time-less path — no user-observable drift from the bug class).
+- A matrix request without any `date_time` triggers row 4 → `costmatrix_` with `has_time=false`; the reverse-side-invalid-TimeInfo behaviour then becomes moot (live fade uses `seconds_from_now=0`, which is equivalent to the default time-less path - no user-observable drift from the bug class).
 
-#### 5.12.3 Summary — production exposure matrix
+#### 5.12.3 Summary - production exposure matrix
 
 | Call shape | Selected algorithm | #5616 exposure |
 |---|---|---|
@@ -995,7 +995,7 @@ Branches evaluated in order.
 
 ---
 
-## 6. Putting It All Together — One Request Lifecycle
+## 6. Putting It All Together - One Request Lifecycle
 
 Example: `POST /route?costing=auto&date_time.type=2&value=2026-04-22T18:00`:
 
@@ -1018,14 +1018,14 @@ Example: `POST /route?costing=auto&date_time.type=2&value=2026-04-22T18:00`:
 
 | Module | Norse god | What it does |
 |--------|-----------|--------------|
-| Loki | trickster | Input handling — correlate lat/lon to graph edges |
-| Thor | strength | Pathfinder — A\*, bidirectional A\*, Dijkstra, matrix, isochrone |
-| Sif | Thor's wife | Costing — dynamic cost models (auto, bike, pedestrian, truck…) |
-| Odin | wisdom | Narrator — turn-by-turn maneuvers |
-| Meili | matchmaker | Map-matching — snap GPS traces to roads |
-| Mjolnir | hammer | Tile builder — offline graph preprocessing from OSM |
-| Skadi | hunt | Elevation — terrain queries |
-| Tyr | war | Service frontend — HTTP layer |
+| Loki | trickster | Input handling - correlate lat/lon to graph edges |
+| Thor | strength | Pathfinder - A\*, bidirectional A\*, Dijkstra, matrix, isochrone |
+| Sif | Thor's wife | Costing - dynamic cost models (auto, bike, pedestrian, truck…) |
+| Odin | wisdom | Narrator - turn-by-turn maneuvers |
+| Meili | matchmaker | Map-matching - snap GPS traces to roads |
+| Mjolnir | hammer | Tile builder - offline graph preprocessing from OSM |
+| Skadi | hunt | Elevation - terrain queries |
+| Tyr | war | Service frontend - HTTP layer |
 
 ---
 
@@ -1049,9 +1049,9 @@ Context for anyone asking "why not OSRM or GraphHopper?"
 
 ### 7.2 The matrix throughput gap (~13× slower than OSRM)
 
-OSRM uses **Contraction Hierarchies** — an offline preprocessing step that pre-computes shortcuts at every node level and gives roughly O(log n) queries for a fixed costing. That pre-computation is what makes matrix queries so cheap, but it also **freezes the costing model** — you cannot pass per-request parameters (no "avoid highways," no "max_height=2.1 m").
+OSRM uses **Contraction Hierarchies** - an offline preprocessing step that pre-computes shortcuts at every node level and gives roughly O(log n) queries for a fixed costing. That pre-computation is what makes matrix queries so cheap, but it also **freezes the costing model** - you cannot pass per-request parameters (no "avoid highways," no "max_height=2.1 m").
 
-Valhalla uses **Dynamic Costing** — costs are evaluated at search time using the request's parameters. Flexible, but you pay for it on every matrix cell.
+Valhalla uses **Dynamic Costing** - costs are evaluated at search time using the request's parameters. Flexible, but you pay for it on every matrix cell.
 
 **Operational trade-off:** for dispatch workloads that run large N×M matrices (driver ↔ pickup distance grids), Valhalla's matrix endpoint is the bottleneck. Mitigations include heavier batching, aggressive caching, or running a parallel OSRM instance specifically for symmetric-matrix workloads.
 
@@ -1070,7 +1070,7 @@ The decisive factors for our own selection were the same: mobile and edge-friend
 Items that are out of scope for this reference but should be tracked:
 
 1. **Issue #5616 mitigation path.** Options range from API-layer gating (force unidirectional when `depart_at > now + 1h`) to an upstream fork. See §5.11 for evidence and recommended sequencing.
-2. **`last_update` freshness monitoring per tile.** A stale traffic tile silently degrades route quality. `last_update` is a `uint64_t` epoch in every `TrafficTileHeader` — inexpensive to scrape into a metrics pipeline.
+2. **`last_update` freshness monitoring per tile.** A stale traffic tile silently degrades route quality. `last_update` is a `uint64_t` epoch in every `TrafficTileHeader` - inexpensive to scrape into a metrics pipeline.
 3. **Live-traffic coverage dashboard.** Edges without a live signal are rendered dim grey in the tile browser; a coverage-by-road-class-by-region view would make blind spots visible to Operations.
 4. **`threshold_delta` tuning.** The default `420` cost units for bidirectional has not been tuned for local road characteristics. Higher = slower but more optimal; lower = faster but can miss better routes across shortcut boundaries.
 5. **Matrix throughput.** OSRM's CH-based approach is approximately 13× faster on matrix queries. A parallel read-only OSRM instance dedicated to dispatch matrices may be worth evaluating.
@@ -1079,7 +1079,7 @@ Items that are out of scope for this reference but should be tracked:
 
 ---
 
-## 9. Configuration Surface — Routing, Live Traffic, ETA
+## 9. Configuration Surface - Routing, Live Traffic, ETA
 
 Three knob groups, each affecting request behaviour at a different layer. All defaults below are sourced from [`scripts/valhalla_build_config`](https://github.com/valhalla/valhalla/blob/master/scripts/valhalla_build_config) (the canonical defaults generator) and the costing source files. Line numbers reference the local cached copy of `valhalla_build_config` retrieved from master; the upstream file is the same structure.
 
@@ -1088,10 +1088,10 @@ Three knob groups, each affecting request behaviour at a different layer. All de
 | Knob | Default | What it controls | Evidence |
 |------|---------|------------------|----------|
 | `thor.source_to_target_algorithm` | `"select_optimal"` | Matrix algorithm selector. Values: `select_optimal` / `costmatrix` / `timedistancematrix` | [`scripts/valhalla_build_config#L214`](https://github.com/valhalla/valhalla/blob/master/scripts/valhalla_build_config) |
-| `thor.bidirectional_astar.hierarchy_limits.max_up_transitions` | `{1: 400, 2: 100}` | Bidir A\* — max allowed up-transitions per level. Caps hierarchy climbing. | [`scripts/valhalla_build_config#L241-L244`](https://github.com/valhalla/valhalla/blob/master/scripts/valhalla_build_config) |
-| `thor.bidirectional_astar.hierarchy_limits.expand_within_distance` | `{0: 1e8, 1: 20000, 2: 5000}` | Bidir A\* — distance from origin/destination within which each level is expanded. Below 5 km the search stays on L2; 5–20 km allows L1; above 20 km allows L0. | [`scripts/valhalla_build_config#L245`](https://github.com/valhalla/valhalla/blob/master/scripts/valhalla_build_config) |
-| `thor.unidirectional_astar.hierarchy_limits.expand_within_distance` | `{0: 1e8, 1: 100000, 2: 5000}` | Unidirectional A\* (time-dependent forward/reverse) — L1 up to 100 km vs Bidir's 20 km. Unidirectional keeps arterial detail longer because there is no opposing frontier to meet. | [`scripts/valhalla_build_config#L254`](https://github.com/valhalla/valhalla/blob/master/scripts/valhalla_build_config) |
-| `thor.costmatrix.hierarchy_limits.expand_within_distance` | `{0: 1e8, 1: 20000, 2: 5000}` | Matrix (CostMatrix) — same shape as Bidir A\*. | [`scripts/valhalla_build_config#L233`](https://github.com/valhalla/valhalla/blob/master/scripts/valhalla_build_config) |
+| `thor.bidirectional_astar.hierarchy_limits.max_up_transitions` | `{1: 400, 2: 100}` | Bidir A\* - max allowed up-transitions per level. Caps hierarchy climbing. | [`scripts/valhalla_build_config#L241-L244`](https://github.com/valhalla/valhalla/blob/master/scripts/valhalla_build_config) |
+| `thor.bidirectional_astar.hierarchy_limits.expand_within_distance` | `{0: 1e8, 1: 20000, 2: 5000}` | Bidir A\* - distance from origin/destination within which each level is expanded. Below 5 km the search stays on L2; 5–20 km allows L1; above 20 km allows L0. | [`scripts/valhalla_build_config#L245`](https://github.com/valhalla/valhalla/blob/master/scripts/valhalla_build_config) |
+| `thor.unidirectional_astar.hierarchy_limits.expand_within_distance` | `{0: 1e8, 1: 100000, 2: 5000}` | Unidirectional A\* (time-dependent forward/reverse) - L1 up to 100 km vs Bidir's 20 km. Unidirectional keeps arterial detail longer because there is no opposing frontier to meet. | [`scripts/valhalla_build_config#L254`](https://github.com/valhalla/valhalla/blob/master/scripts/valhalla_build_config) |
+| `thor.costmatrix.hierarchy_limits.expand_within_distance` | `{0: 1e8, 1: 20000, 2: 5000}` | Matrix (CostMatrix) - same shape as Bidir A\*. | [`scripts/valhalla_build_config#L233`](https://github.com/valhalla/valhalla/blob/master/scripts/valhalla_build_config) |
 | `service_limits.max_timedep_distance` | `500000` (m) | Beeline cutoff beyond which a time-dependent `/route` falls back to Bidir A\* and emits warning 402. Directly gates #5616 exposure. | [`scripts/valhalla_build_config#L405`](https://github.com/valhalla/valhalla/blob/master/scripts/valhalla_build_config) |
 | `service_limits.max_distance_disable_hierarchy_culling` | `0` | Max beeline distance at which hierarchy culling can be disabled. `0` means hierarchy pruning is always on in production. | [`scripts/valhalla_build_config#L411`](https://github.com/valhalla/valhalla/blob/master/scripts/valhalla_build_config) |
 | `service_limits.hierarchy_limits.allow_modification` | `false` | Whether client requests can override hierarchy limits. Closed by default. | [`scripts/valhalla_build_config#L413`](https://github.com/valhalla/valhalla/blob/master/scripts/valhalla_build_config) |
@@ -1108,17 +1108,17 @@ Live traffic enters the routing core through the `traffic.tar` extract, is read 
 |------------------|-------|------|----------|
 | `mjolnir.traffic_extract` | `/data/valhalla/traffic.tar` | Path to the live traffic extract. Memory-mapped read-only. | [`scripts/valhalla_build_config#L136`](https://github.com/valhalla/valhalla/blob/master/scripts/valhalla_build_config) |
 | `mjolnir.incident_dir` / `mjolnir.incident_log` | Optional | Incident tile directory and change log. Null in our deployment. | [`scripts/valhalla_build_config#L137-L138`](https://github.com/valhalla/valhalla/blob/master/scripts/valhalla_build_config) |
-| `kDefaultFlowMask` | `kFreeFlow \| kConstrainedFlow \| kPredictedFlow \| kCurrentFlow` (`1 \| 2 \| 4 \| 8 = 15`) | All four speed sources active by default — live, predicted, constrained-flow, free-flow. | [`valhalla/baldr/graphconstants.h#L853-L854`](https://github.com/valhalla/valhalla/blob/master/valhalla/baldr/graphconstants.h#L853-L854) |
+| `kDefaultFlowMask` | `kFreeFlow \| kConstrainedFlow \| kPredictedFlow \| kCurrentFlow` (`1 \| 2 \| 4 \| 8 = 15`) | All four speed sources active by default - live, predicted, constrained-flow, free-flow. | [`valhalla/baldr/graphconstants.h#L853-L854`](https://github.com/valhalla/valhalla/blob/master/valhalla/baldr/graphconstants.h#L853-L854) |
 | `LIVE_SPEED_FADE` | `1/3600` | Coefficient of the 1-hour linear fade on live-traffic weight. | [`valhalla/baldr/graphtile.h#L811`](https://github.com/valhalla/valhalla/blob/master/valhalla/baldr/graphtile.h#L811) |
 | `live_traffic_multiplier` | `1 − min(seconds_from_now × LIVE_SPEED_FADE, 1)` | Weight applied to live speed. Zero at `seconds_from_now ≥ 3600`. | [`valhalla/baldr/graphtile.h#L816`](https://github.com/valhalla/valhalla/blob/master/valhalla/baldr/graphtile.h#L816) |
 
 **Speed-source fallback chain** in [`valhalla/baldr/graphtile.h#L796-L903`](https://github.com/valhalla/valhalla/blob/master/valhalla/baldr/graphtile.h#L796-L903) (invoked by every costing call):
 
-1. **Live (kCurrentFlowMask)** — applied if the tile has a live speed for this edge, the speed is valid and non-zero, and `live_traffic_multiplier > 0`. Faded per above. [`L820-L852`](https://github.com/valhalla/valhalla/blob/master/valhalla/baldr/graphtile.h#L820-L852)
-2. **Predicted (kPredictedFlowMask)** — applied if a time was passed in and the edge has a predicted-speed profile. Blended with any partial live coverage. [`L857-L864`](https://github.com/valhalla/valhalla/blob/master/valhalla/baldr/graphtile.h#L857-L864)
-3. **Constrained flow (kConstrainedFlowMask)** — applied during daytime, defined as `25200 < seconds < 68400` (07:00–19:00 local), or if no time was supplied. [`L870-L876`](https://github.com/valhalla/valhalla/blob/master/valhalla/baldr/graphtile.h#L870-L876)
-4. **Free flow (kFreeFlowMask)** — applied outside 07:00–19:00 or if no time was supplied. [`L886-L891`](https://github.com/valhalla/valhalla/blob/master/valhalla/baldr/graphtile.h#L886-L891)
-5. **Static fallback** — `de->speed()` (or `de->truck_speed()` for truck mode). [`L900-L902`](https://github.com/valhalla/valhalla/blob/master/valhalla/baldr/graphtile.h#L900-L902)
+1. **Live (kCurrentFlowMask)** - applied if the tile has a live speed for this edge, the speed is valid and non-zero, and `live_traffic_multiplier > 0`. Faded per above. [`L820-L852`](https://github.com/valhalla/valhalla/blob/master/valhalla/baldr/graphtile.h#L820-L852)
+2. **Predicted (kPredictedFlowMask)** - applied if a time was passed in and the edge has a predicted-speed profile. Blended with any partial live coverage. [`L857-L864`](https://github.com/valhalla/valhalla/blob/master/valhalla/baldr/graphtile.h#L857-L864)
+3. **Constrained flow (kConstrainedFlowMask)** - applied during daytime, defined as `25200 < seconds < 68400` (07:00–19:00 local), or if no time was supplied. [`L870-L876`](https://github.com/valhalla/valhalla/blob/master/valhalla/baldr/graphtile.h#L870-L876)
+4. **Free flow (kFreeFlowMask)** - applied outside 07:00–19:00 or if no time was supplied. [`L886-L891`](https://github.com/valhalla/valhalla/blob/master/valhalla/baldr/graphtile.h#L886-L891)
+5. **Static fallback** - `de->speed()` (or `de->truck_speed()` for truck mode). [`L900-L902`](https://github.com/valhalla/valhalla/blob/master/valhalla/baldr/graphtile.h#L900-L902)
 
 **#5616-class exposure recap.** Any algorithm that calls `GetSpeed` with `seconds_from_now = 0` on a frontier that is *not* actually the current moment will apply full live weight (multiplier = 1.0). Confirmed sites on master:
 
@@ -1138,11 +1138,11 @@ Edge speed is determined at **two distinct times**: tile build (`de->speed()`, t
 | Auto `fixed_speed` | `kDisableFixedSpeed = 0` (disabled) | When > 0, overrides all edge-speed logic with a single speed for the whole request. Useful for planning, breaks live traffic. | [`valhalla/baldr/graphconstants.h#L116`](https://github.com/valhalla/valhalla/blob/master/valhalla/baldr/graphconstants.h#L116) |
 | `service_limits.auto.max_distance` | `5,000,000` (m) | Hard cap on the beeline distance between all request locations. | [`scripts/valhalla_build_config#L312`](https://github.com/valhalla/valhalla/blob/master/scripts/valhalla_build_config) |
 
-**What is country-aware vs global.** The admin DB is country-aware: `drive_on_right` is per-node (set by country polygon), turn-lane parsing uses country code, and the default-speeds JSON can key on country. Costing-level constants (all the `kDefault*` and `kTC*` values in §11.2) are **global compile-time constants** — they do not vary by country.
+**What is country-aware vs global.** The admin DB is country-aware: `drive_on_right` is per-node (set by country polygon), turn-lane parsing uses country code, and the default-speeds JSON can key on country. Costing-level constants (all the `kDefault*` and `kTC*` values in §11.2) are **global compile-time constants** - they do not vary by country.
 
 ---
 
-## 10. Location Radius — how Loki picks candidate edges
+## 10. Location Radius - how Loki picks candidate edges
 
 The `radius` supplied on each input location drives Loki's candidate search. The interaction between radius, `search_cutoff`, and `minimum_reachability` decides what actually gets correlated to the graph.
 
@@ -1150,17 +1150,17 @@ The `radius` supplied on each input location drives Loki's candidate search. The
 
 | Parameter | Default | Hard cap | Meaning | Evidence |
 |-----------|---------|----------|---------|----------|
-| `loki.service_defaults.radius` | `0` | — | Radius (m) applied when the client does not supply one. `0` means "point search" — only the single closest edge is considered within-radius. | [`scripts/valhalla_build_config#L199`](https://github.com/valhalla/valhalla/blob/master/scripts/valhalla_build_config), applied at [`src/loki/loki_worker.cc#L50-L51`](https://github.com/valhalla/valhalla/blob/master/src/loki/loki_worker.cc) |
+| `loki.service_defaults.radius` | `0` | - | Radius (m) applied when the client does not supply one. `0` means "point search" - only the single closest edge is considered within-radius. | [`scripts/valhalla_build_config#L199`](https://github.com/valhalla/valhalla/blob/master/scripts/valhalla_build_config), applied at [`src/loki/loki_worker.cc#L50-L51`](https://github.com/valhalla/valhalla/blob/master/src/loki/loki_worker.cc) |
 | `service_limits.max_radius` | `200` | hard | Hard cap on any client-supplied radius. Requests above this are clamped. | [`scripts/valhalla_build_config#L404`](https://github.com/valhalla/valhalla/blob/master/scripts/valhalla_build_config), clamp at [`src/loki/loki_worker.cc#L52`](https://github.com/valhalla/valhalla/blob/master/src/loki/loki_worker.cc) |
-| `loki.service_defaults.search_cutoff` | `35000` | — | Max distance (m) from the input point to a candidate edge. Beyond this Loki gives up on the point. | [`scripts/valhalla_build_config#L201`](https://github.com/valhalla/valhalla/blob/master/scripts/valhalla_build_config), applied at [`src/loki/loki_worker.cc#L64-L66`](https://github.com/valhalla/valhalla/blob/master/src/loki/loki_worker.cc), enforced at [`src/loki/search.cc#L237-L239`](https://github.com/valhalla/valhalla/blob/master/src/loki/search.cc#L237-L239) and [`#L290`](https://github.com/valhalla/valhalla/blob/master/src/loki/search.cc#L290) |
-| `loki.service_defaults.node_snap_tolerance` | `5` | — | If the projected snap point is within this distance (m) of a graph node, snap to the node instead of along the edge. | [`scripts/valhalla_build_config#L202`](https://github.com/valhalla/valhalla/blob/master/scripts/valhalla_build_config), applied at [`src/loki/loki_worker.cc#L58-L59`](https://github.com/valhalla/valhalla/blob/master/src/loki/loki_worker.cc) |
-| `loki.service_defaults.street_side_tolerance` | `5` | — | If the input is within this distance (m) of the edge centreline, side-of-street is left undetermined rather than set to left/right. | [`scripts/valhalla_build_config#L203`](https://github.com/valhalla/valhalla/blob/master/scripts/valhalla_build_config), applied at [`src/loki/loki_worker.cc#L79-L80`](https://github.com/valhalla/valhalla/blob/master/src/loki/loki_worker.cc) |
-| `loki.service_defaults.street_side_max_distance` | `1000` | — | Beyond this distance from the centreline, side-of-street is also left undetermined. | [`scripts/valhalla_build_config#L204`](https://github.com/valhalla/valhalla/blob/master/scripts/valhalla_build_config) |
-| `loki.service_defaults.heading_tolerance` | `60` | — | Degrees of tolerance when the client supplies a heading. Candidates whose bearing is outside ± this are de-prioritised. | [`scripts/valhalla_build_config#L205`](https://github.com/valhalla/valhalla/blob/master/scripts/valhalla_build_config) |
-| `loki.service_defaults.minimum_reachability` | `50` | — | Number of nodes a candidate edge must reach (inbound OR outbound) before it is classified as "reachable". Candidates below this go into the "unreachable" bucket. | [`scripts/valhalla_build_config#L200`](https://github.com/valhalla/valhalla/blob/master/scripts/valhalla_build_config), applied at [`src/loki/search.cc#L640-L641`](https://github.com/valhalla/valhalla/blob/master/src/loki/search.cc#L640-L641) |
+| `loki.service_defaults.search_cutoff` | `35000` | - | Max distance (m) from the input point to a candidate edge. Beyond this Loki gives up on the point. | [`scripts/valhalla_build_config#L201`](https://github.com/valhalla/valhalla/blob/master/scripts/valhalla_build_config), applied at [`src/loki/loki_worker.cc#L64-L66`](https://github.com/valhalla/valhalla/blob/master/src/loki/loki_worker.cc), enforced at [`src/loki/search.cc#L237-L239`](https://github.com/valhalla/valhalla/blob/master/src/loki/search.cc#L237-L239) and [`#L290`](https://github.com/valhalla/valhalla/blob/master/src/loki/search.cc#L290) |
+| `loki.service_defaults.node_snap_tolerance` | `5` | - | If the projected snap point is within this distance (m) of a graph node, snap to the node instead of along the edge. | [`scripts/valhalla_build_config#L202`](https://github.com/valhalla/valhalla/blob/master/scripts/valhalla_build_config), applied at [`src/loki/loki_worker.cc#L58-L59`](https://github.com/valhalla/valhalla/blob/master/src/loki/loki_worker.cc) |
+| `loki.service_defaults.street_side_tolerance` | `5` | - | If the input is within this distance (m) of the edge centreline, side-of-street is left undetermined rather than set to left/right. | [`scripts/valhalla_build_config#L203`](https://github.com/valhalla/valhalla/blob/master/scripts/valhalla_build_config), applied at [`src/loki/loki_worker.cc#L79-L80`](https://github.com/valhalla/valhalla/blob/master/src/loki/loki_worker.cc) |
+| `loki.service_defaults.street_side_max_distance` | `1000` | - | Beyond this distance from the centreline, side-of-street is also left undetermined. | [`scripts/valhalla_build_config#L204`](https://github.com/valhalla/valhalla/blob/master/scripts/valhalla_build_config) |
+| `loki.service_defaults.heading_tolerance` | `60` | - | Degrees of tolerance when the client supplies a heading. Candidates whose bearing is outside ± this are de-prioritised. | [`scripts/valhalla_build_config#L205`](https://github.com/valhalla/valhalla/blob/master/scripts/valhalla_build_config) |
+| `loki.service_defaults.minimum_reachability` | `50` | - | Number of nodes a candidate edge must reach (inbound OR outbound) before it is classified as "reachable". Candidates below this go into the "unreachable" bucket. | [`scripts/valhalla_build_config#L200`](https://github.com/valhalla/valhalla/blob/master/scripts/valhalla_build_config), applied at [`src/loki/search.cc#L640-L641`](https://github.com/valhalla/valhalla/blob/master/src/loki/search.cc#L640-L641) |
 | `service_limits.max_reachability` | `100` | hard | Hard cap on any client-supplied reachability. | [`scripts/valhalla_build_config#L403`](https://github.com/valhalla/valhalla/blob/master/scripts/valhalla_build_config) |
 
-### 10.2 In-radius vs reachable — the bucketing logic
+### 10.2 In-radius vs reachable - the bucketing logic
 
 `bin_handler_t` in [`src/loki/search.cc`](https://github.com/valhalla/valhalla/blob/master/src/loki/search.cc) bins candidate edges into two lists per input location: **reachable** and **unreachable**. The decision algorithm is:
 
@@ -1178,37 +1178,37 @@ for each candidate edge within search_cutoff:
 
 - With `radius = 0` (server default), `in_radius` is only true for an edge whose projection sits exactly on the input point. Every other candidate must be "better" (closer than the current back-of-bucket) to be kept. This is acceptable when GPS error is small (EU/US open-sky, ~3–8 m) but marginal in urban canyons with multi-metre drift.
 - With a non-zero radius, *all* edges inside the radius are kept regardless of reach. The service then prefers reachable over unreachable, but unreachable is used only if there is no reachable candidate. [`src/loki/search.cc#L232-L239`](https://github.com/valhalla/valhalla/blob/master/src/loki/search.cc#L232-L239).
-- `minimum_reachability = 50` is the gate that determines which bucket. An edge attached to a tiny disconnected island of nodes (< 50) is marked unreachable even if it is physically the closest. This is how alley false-starts are prevented — and also how genuine alley destinations get dropped.
+- `minimum_reachability = 50` is the gate that determines which bucket. An edge attached to a tiny disconnected island of nodes (< 50) is marked unreachable even if it is physically the closest. This is how alley false-starts are prevented - and also how genuine alley destinations get dropped.
 - Opposing-edge swap: if an edge is not reachable but its opposing is, Loki swaps to the opposing side automatically. [`src/loki/search.cc#L643-L653`](https://github.com/valhalla/valhalla/blob/master/src/loki/search.cc#L643-L653).
 
 ### 10.3 Hierarchy and shortcut behaviour at snap time
 
-**Loki always searches on Level 2 (local) tiles.** Candidate bins are filtered to L2 edges only. L0 (highway) and L1 (arterial) tiles are **not** candidates — they are reachable only by transition-up from L2 during the Thor path search.
+**Loki always searches on Level 2 (local) tiles.** Candidate bins are filtered to L2 edges only. L0 (highway) and L1 (arterial) tiles are **not** candidates - they are reachable only by transition-up from L2 during the Thor path search.
 
 **Thor's hierarchy-climb is distance-gated.** At the origin and destination, the search is restricted to L2 for the first `expand_within_distance[2]` metres of beeline radius (5,000 m default in every algorithm). From 5 km to 20 km (Bidir / CostMatrix) or 100 km (unidirectional A\*), L1 is also open. Above that, L0 opens and shortcut edges become eligible. See [§9.1](#91-routing--hierarchy).
 
-**Consequences for short routes:** a < 5 km route never touches shortcuts or highways in the graph search. Every edge is a local-tile edge, so the entire route uses local detail. Short-route ETA is therefore unaffected by `thor.*.hierarchy_limits` — those knobs are only load-bearing above 5 km.
+**Consequences for short routes:** a < 5 km route never touches shortcuts or highways in the graph search. Every edge is a local-tile edge, so the entire route uses local detail. Short-route ETA is therefore unaffected by `thor.*.hierarchy_limits` - those knobs are only load-bearing above 5 km.
 
-**Consequences for long routes:** the first ~5 km from origin and ~5 km before destination are forced through local roads, regardless of how close to a highway on-ramp the input point is. Combined with `node_snap_tolerance = 5`, inputs very near a ramp will snap to the ramp itself rather than to the main road. In practice this is why ETAs for routes starting at the base of an elevated highway (common in HCM / HN) depend heavily on which ramp Loki picks — the first ramp on the list becomes the start of the L0 climb.
+**Consequences for long routes:** the first ~5 km from origin and ~5 km before destination are forced through local roads, regardless of how close to a highway on-ramp the input point is. Combined with `node_snap_tolerance = 5`, inputs very near a ramp will snap to the ramp itself rather than to the main road. In practice this is why ETAs for routes starting at the base of an elevated highway (common in HCM / HN) depend heavily on which ramp Loki picks - the first ramp on the list becomes the start of the L0 climb.
 
-### 10.4 Real-service impact — snap quality and shortcut scope
+### 10.4 Real-service impact - snap quality and shortcut scope
 
 **Snap quality issues that trace to radius configuration:**
 
-1. **Wrong-side-of-road** — with `street_side_tolerance = 5`, side-of-street is left undetermined for any point within 5 m of the centreline. Urban GPS error in HCM / HN commonly exceeds 5 m (tall building canyons, overhead wires), so the majority of side-of-street decisions are "unknown", which defaults to routing over the centreline. Result: pickup/drop-off on the wrong side is a coin flip.
-2. **Snap-to-service-road** — in residential districts the service roads and driveways are L2 edges with `service_penalty = 75 s` applied only at *transition*, not at *snap*. If Loki picks a service-road edge because it is nominally closer, the cost of the service snap is not penalised in the candidate phase (it is only in Thor's expansion). This produces routes that begin with "turn onto service road" maneuvers that a human would never drive.
-3. **Snap-to-ferry / tunnel** — `use_ferry = 0.5` penalises ferry *use*, not ferry *snap*. Inputs near a ferry dock can snap directly onto a ferry edge as the nominal closest candidate.
-4. **Hẻm false-negatives** — an alley attached to < 50 graph nodes is reachability-filtered at `minimum_reachability = 50`. The correct snap exists in the tile but is rejected; the client sees "no route" or a route starting 80 m away on the nearest through-street.
+1. **Wrong-side-of-road** - with `street_side_tolerance = 5`, side-of-street is left undetermined for any point within 5 m of the centreline. Urban GPS error in HCM / HN commonly exceeds 5 m (tall building canyons, overhead wires), so the majority of side-of-street decisions are "unknown", which defaults to routing over the centreline. Result: pickup/drop-off on the wrong side is a coin flip.
+2. **Snap-to-service-road** - in residential districts the service roads and driveways are L2 edges with `service_penalty = 75 s` applied only at *transition*, not at *snap*. If Loki picks a service-road edge because it is nominally closer, the cost of the service snap is not penalised in the candidate phase (it is only in Thor's expansion). This produces routes that begin with "turn onto service road" maneuvers that a human would never drive.
+3. **Snap-to-ferry / tunnel** - `use_ferry = 0.5` penalises ferry *use*, not ferry *snap*. Inputs near a ferry dock can snap directly onto a ferry edge as the nominal closest candidate.
+4. **Hẻm false-negatives** - an alley attached to < 50 graph nodes is reachability-filtered at `minimum_reachability = 50`. The correct snap exists in the tile but is rejected; the client sees "no route" or a route starting 80 m away on the nearest through-street.
 
 **Shortcut-scope observations:**
 
-- **Snap-induced cliffs.** When an input point lies close to the 5 km threshold, whether L1 is allowed during origin expansion depends on the beeline distance to the *eventual* destination. Two requests with endpoints only metres apart can produce materially different routes if one tips across the 5 km boundary — the farther one is allowed L1 at origin, the closer one is not.
+- **Snap-induced cliffs.** When an input point lies close to the 5 km threshold, whether L1 is allowed during origin expansion depends on the beeline distance to the *eventual* destination. Two requests with endpoints only metres apart can produce materially different routes if one tips across the 5 km boundary - the farther one is allowed L1 at origin, the closer one is not.
 - **Ramp-snap asymmetry.** With `node_snap_tolerance = 5`, an input within 5 m of a ramp node snaps to the ramp. Inside the 5 km L2-only zone, the ramp is still treated as a local edge: the search must traverse it at L2 speed for the remaining pre-climb distance before transitioning up. Small positional differences on either side of a ramp node therefore produce noticeably different ETAs.
-- **Alley-to-arterial transitions.** Because shortcuts exist only on L0/L1, routes that start in an alley climb to L1 at 5 km and L0 at 20 km regardless of whether a shortcut could have been used earlier. The shortcut layer is purely a mid-route acceleration — it does not influence origin-area routing.
+- **Alley-to-arterial transitions.** Because shortcuts exist only on L0/L1, routes that start in an alley climb to L1 at 5 km and L0 at 20 km regardless of whether a shortcut could have been used earlier. The shortcut layer is purely a mid-route acceleration - it does not influence origin-area routing.
 
 ---
 
-## 11. Default Configuration Fit — EU / US vs Vietnam (HCM, HN)
+## 11. Default Configuration Fit - EU / US vs Vietnam (HCM, HN)
 
 Valhalla's shipped defaults are calibrated against OSM data and driving behaviour that most closely resembles Western Europe and the United States. Several of these defaults diverge from observed driving conditions in Ho Chi Minh City and Hanoi. This section identifies those defaults, proposes override *ranges* with rationale, and lists the analytics signals required to pick a point value inside each range.
 
@@ -1219,10 +1219,10 @@ Valhalla's shipped defaults are calibrated against OSM data and driving behaviou
 | `kDefaultUseFerry` | `0.5` [`src/sif/dynamiccost.cc#L97`](https://github.com/valhalla/valhalla/blob/master/src/sif/dynamiccost.cc#L97) | Neutral preference. Vietnam has comparatively few vehicle ferries and more where refusal is practical (Mekong Delta small-craft ferries that consumer routes should not use by default). |
 | `kDefaultUseHighways` | `0.5` [`src/sif/autocost.cc#L33`](https://github.com/valhalla/valhalla/blob/master/src/sif/autocost.cc#L33) | In Vietnam "highway" in the OSM sense includes expressways (Cao tốc, tolled) and Highway-1 class (trunk, free). `use_highways = 0.5` does not distinguish the two. |
 | `kDefaultUseTolls` | `0.5` [`src/sif/autocost.cc#L34`](https://github.com/valhalla/valhalla/blob/master/src/sif/autocost.cc#L34) | Toll roads in Vietnam are a smaller share of the network than in Western Europe; the neutral value is higher than most drivers' actual preference for paid routes. |
-| `kDefaultServicePenalty` (Auto) | `75 s` [`src/sif/autocost.cc#L30`](https://github.com/valhalla/valhalla/blob/master/src/sif/autocost.cc#L30) (overrides the base `15 s` at [`src/sif/dynamiccost.cc#L94`](https://github.com/valhalla/valhalla/blob/master/src/sif/dynamiccost.cc#L94)) | Service roads in the US / EU are parking aisles and delivery lanes — correctly rarely used. In Vietnam, service-tagged roads include large categories of parking-lot access and residential shortcuts that are routinely driven. |
-| `kDefaultAlleyPenalty` | `5 s` [`src/sif/dynamiccost.cc#L84`](https://github.com/valhalla/valhalla/blob/master/src/sif/dynamiccost.cc#L84) with `kDefaultAlleyFactor = 1.0` [`src/sif/autocost.cc#L56`](https://github.com/valhalla/valhalla/blob/master/src/sif/autocost.cc#L56) — "Do not avoid alleys by default" | Alleys (ngõ / hẻm) in HN / HCM are density-constrained, slow, and frequently one-way-in-practice; the default does not discourage them. |
+| `kDefaultServicePenalty` (Auto) | `75 s` [`src/sif/autocost.cc#L30`](https://github.com/valhalla/valhalla/blob/master/src/sif/autocost.cc#L30) (overrides the base `15 s` at [`src/sif/dynamiccost.cc#L94`](https://github.com/valhalla/valhalla/blob/master/src/sif/dynamiccost.cc#L94)) | Service roads in the US / EU are parking aisles and delivery lanes - correctly rarely used. In Vietnam, service-tagged roads include large categories of parking-lot access and residential shortcuts that are routinely driven. |
+| `kDefaultAlleyPenalty` | `5 s` [`src/sif/dynamiccost.cc#L84`](https://github.com/valhalla/valhalla/blob/master/src/sif/dynamiccost.cc#L84) with `kDefaultAlleyFactor = 1.0` [`src/sif/autocost.cc#L56`](https://github.com/valhalla/valhalla/blob/master/src/sif/autocost.cc#L56) - "Do not avoid alleys by default" | Alleys (ngõ / hẻm) in HN / HCM are density-constrained, slow, and frequently one-way-in-practice; the default does not discourage them. |
 | `kDefaultUseLivingStreets` | `0.1` [`src/sif/dynamiccost.cc#L100`](https://github.com/valhalla/valhalla/blob/master/src/sif/dynamiccost.cc#L100) | Living-street class in Vietnam overlaps with residential lanes that are legitimately used as through-routes; the strong-avoid bias is appropriate in EU but over-restrictive in VN urban cores. |
-| `kRightSideTurnCosts` array | Hard-coded: Straight 0.5, Favorable (right) 1.0, Crossing 2.0, Unfavorable (left) 2.5, Reverse (U-turn) 9.5 [`src/sif/autocost.cc#L62-L64`](https://github.com/valhalla/valhalla/blob/master/src/sif/autocost.cc#L62-L64) | Fixed 2.5× cost for left turns. This is calibrated for arterial traffic with protected signals — it under-penalises left turns at un-signalised HCM / HN intersections where wait times can be 30–60 s. The arrays are `constexpr`; they are **not** runtime-configurable without a source change. |
+| `kRightSideTurnCosts` array | Hard-coded: Straight 0.5, Favorable (right) 1.0, Crossing 2.0, Unfavorable (left) 2.5, Reverse (U-turn) 9.5 [`src/sif/autocost.cc#L62-L64`](https://github.com/valhalla/valhalla/blob/master/src/sif/autocost.cc#L62-L64) | Fixed 2.5× cost for left turns. This is calibrated for arterial traffic with protected signals - it under-penalises left turns at un-signalised HCM / HN intersections where wait times can be 30–60 s. The arrays are `constexpr`; they are **not** runtime-configurable without a source change. |
 | `kTCRamp / kTCRoundabout` | Additive `+1.5` / `+0.5` [`src/sif/autocost.cc#L49-L50`](https://github.com/valhalla/valhalla/blob/master/src/sif/autocost.cc#L49-L50) | Roundabout cost +0.5 s is low for VN roundabouts which routinely back up under mixed-traffic conditions. |
 | `meili.auto.turn_penalty_factor` | `200` [`scripts/valhalla_build_config#L293`](https://github.com/valhalla/valhalla/blob/master/scripts/valhalla_build_config) | Map-matching turn penalty calibrated on car-dominant traces. VN trace density (dominant motorbikes, frequent side-street weaves) produces more apparent turns per km; a factor of 200 over-penalises legitimate turn sequences and can produce matched routes that "straighten" real paths. |
 | `loki.service_defaults.radius` | `0` [`scripts/valhalla_build_config#L199`](https://github.com/valhalla/valhalla/blob/master/scripts/valhalla_build_config) | Point search assumes sub-5-m GPS accuracy. HCM / HN urban canyons regularly produce 10–20 m drift. |
@@ -1243,20 +1243,20 @@ Confidence: **High** = code-verified mechanism and direction clear; **Medium** =
 | `use_tolls` | `0.5` | `0.2 – 0.3` (consumer free tier) | Most consumer requests would prefer toll-free; value 0.2 produces weighting `4 − 8 × 0.2 = 2.4` (see [`src/sif/autocost.cc#L405`](https://github.com/valhalla/valhalla/blob/master/src/sif/autocost.cc#L405)), discouraging but not excluding. | [`src/sif/autocost.cc#L34,L404-L406`](https://github.com/valhalla/valhalla/blob/master/src/sif/autocost.cc#L34) | Medium |
 | `use_ferry` | `0.5` | `0.3 – 0.4` | Mekong Delta small ferries should not be default; major river crossings must stay routable. | [`src/sif/dynamiccost.cc#L97`](https://github.com/valhalla/valhalla/blob/master/src/sif/dynamiccost.cc#L97) | Medium |
 | `use_living_streets` | `0.1` | `0.2 – 0.3` | Living-street class has legitimate through-traffic use in VN urban cores; raising softens the avoidance. | [`src/sif/dynamiccost.cc#L100`](https://github.com/valhalla/valhalla/blob/master/src/sif/dynamiccost.cc#L100) | Medium |
-| `maneuver_penalty` | `5 s` | `8 – 12 s` | Every maneuver in HN / HCM carries more latency than EU arterials — signal wait plus mixed-traffic friction. Raising shifts routes toward fewer-turn geometries even at modest distance cost. | [`src/sif/dynamiccost.cc#L83`](https://github.com/valhalla/valhalla/blob/master/src/sif/dynamiccost.cc#L83) | Medium |
+| `maneuver_penalty` | `5 s` | `8 – 12 s` | Every maneuver in HN / HCM carries more latency than EU arterials - signal wait plus mixed-traffic friction. Raising shifts routes toward fewer-turn geometries even at modest distance cost. | [`src/sif/dynamiccost.cc#L83`](https://github.com/valhalla/valhalla/blob/master/src/sif/dynamiccost.cc#L83) | Medium |
 | `gate_penalty` / `gate_cost` | `300 s` / `30 s` | Hold at defaults | Private-access gate behaviour is consistent with VN; no override needed. | [`src/sif/dynamiccost.cc#L85-L86`](https://github.com/valhalla/valhalla/blob/master/src/sif/dynamiccost.cc#L85-L86) | High |
 | `private_access_penalty` | `450 s` | Hold at default | Baseline is already aggressive. | [`src/sif/dynamiccost.cc#L87`](https://github.com/valhalla/valhalla/blob/master/src/sif/dynamiccost.cc#L87) | High |
 | `country_crossing_cost` / `_penalty` | `600 s` / `0 s` | Not applicable | VN routes do not cross admin country boundaries internally. Leave at defaults for Cambodia / Laos edge cases. | [`src/sif/dynamiccost.cc#L92-L93`](https://github.com/valhalla/valhalla/blob/master/src/sif/dynamiccost.cc#L92-L93) | High |
-| Left-turn cost (`kTCUnfavorable = 2.5` for right-drive) | Hard-coded | Not runtime-configurable — requires source fork to expose as option, or compensate indirectly via `maneuver_penalty` | The array is `constexpr` at [`src/sif/autocost.cc#L62-L64`](https://github.com/valhalla/valhalla/blob/master/src/sif/autocost.cc#L62-L64). Direct tuning means forking. Indirect compensation: raising `maneuver_penalty` adds a flat penalty to every turn (not just left), so it over-applies to right turns. | [`src/sif/autocost.cc#L588-L589`](https://github.com/valhalla/valhalla/blob/master/src/sif/autocost.cc#L588) applies `kRightSideTurnCosts[turntype]` | Medium (direction) / Low (magnitude) |
+| Left-turn cost (`kTCUnfavorable = 2.5` for right-drive) | Hard-coded | Not runtime-configurable - requires source fork to expose as option, or compensate indirectly via `maneuver_penalty` | The array is `constexpr` at [`src/sif/autocost.cc#L62-L64`](https://github.com/valhalla/valhalla/blob/master/src/sif/autocost.cc#L62-L64). Direct tuning means forking. Indirect compensation: raising `maneuver_penalty` adds a flat penalty to every turn (not just left), so it over-applies to right turns. | [`src/sif/autocost.cc#L588-L589`](https://github.com/valhalla/valhalla/blob/master/src/sif/autocost.cc#L588) applies `kRightSideTurnCosts[turntype]` | Medium (direction) / Low (magnitude) |
 | `meili.auto.turn_penalty_factor` | `200` | `80 – 140` | Dense VN traces cross more real turns per km than EU; lower factor reduces false "straighten the trace" map-matches. | [`scripts/valhalla_build_config#L293`](https://github.com/valhalla/valhalla/blob/master/scripts/valhalla_build_config) | Medium |
 | `loki.service_defaults.radius` | `0` | `10 – 25 m` (urban request default) | GPS error floor in HN / HCM canyons exceeds 5 m; supplying a non-zero radius lets multiple candidates compete. Too-high (> 30 m) hurts latency and allows nonsense candidates. | [`scripts/valhalla_build_config#L199`](https://github.com/valhalla/valhalla/blob/master/scripts/valhalla_build_config) | High (direction) / Medium (magnitude) |
 | `loki.service_defaults.search_cutoff` | `35000 m` | `3000 – 5000 m` | In VN any legal snap is within hundreds of metres; capping lower saves p99 on degraded GPS. | [`scripts/valhalla_build_config#L201`](https://github.com/valhalla/valhalla/blob/master/scripts/valhalla_build_config) | High (direction) / Medium (magnitude) |
 | `loki.service_defaults.node_snap_tolerance` | `5 m` | `2 – 3 m` | Prevents spurious node-snap flips in dense urban grids. | [`scripts/valhalla_build_config#L202`](https://github.com/valhalla/valhalla/blob/master/scripts/valhalla_build_config) | Medium |
 | `loki.service_defaults.minimum_reachability` | `50` | `15 – 25` | Allows small hẻm clusters to be valid destinations. Risk: more stranded-island candidates reach the router; mitigated by the opposing-edge swap at [`src/loki/search.cc#L643-L653`](https://github.com/valhalla/valhalla/blob/master/src/loki/search.cc#L643-L653). | [`scripts/valhalla_build_config#L200`](https://github.com/valhalla/valhalla/blob/master/scripts/valhalla_build_config) | Medium |
 | `thor.bidirectional_astar.expand_within_distance[1]` | `20000 m` | `30000 – 40000 m` for intra-city VN | The 20 km L1 horizon is tight for HCM / HN cross-city routes. Raising lets the search keep arterial detail through the core. Trade-off: more labels, slightly slower Bidir. | [`scripts/valhalla_build_config#L245`](https://github.com/valhalla/valhalla/blob/master/scripts/valhalla_build_config) | Low (mechanism Medium, magnitude Low) |
-| `mjolnir.default_speeds_config` | unset | Author a VN-urban profile (country × urban × road-class) — separate deliverable | Biggest lever for VN ETA accuracy. Requires Vietnam-specific measured speeds by road class & urban density. | [`scripts/valhalla_build_config#L162`](https://github.com/valhalla/valhalla/blob/master/scripts/valhalla_build_config) | High (direction) / Low (values — data-dependent) |
+| `mjolnir.default_speeds_config` | unset | Author a VN-urban profile (country × urban × road-class) - separate deliverable | Biggest lever for VN ETA accuracy. Requires Vietnam-specific measured speeds by road class & urban density. | [`scripts/valhalla_build_config#L162`](https://github.com/valhalla/valhalla/blob/master/scripts/valhalla_build_config) | High (direction) / Low (values - data-dependent) |
 
-**Override granularity.** `service_defaults.*` and `service_limits.*` are server-wide. Costing knobs (`maneuver_penalty`, `use_highways`, etc.) can be supplied per-request by the client — so operator-tier profiles are feasible without server config changes, provided the client encodes the knobs.
+**Override granularity.** `service_defaults.*` and `service_limits.*` are server-wide. Costing knobs (`maneuver_penalty`, `use_highways`, etc.) can be supplied per-request by the client - so operator-tier profiles are feasible without server config changes, provided the client encodes the knobs.
 
 ### 11.3 Data we still need before tuning is defensible
 
@@ -1268,9 +1268,9 @@ None of the ranges above can be collapsed to a point value without the following
 | Intersection-delay histogram by turn type (straight / right / left / U-turn) at top-100 HCM/HN intersections, peak vs off-peak | Validate or invalidate the 2.5× left-turn cost and inform `maneuver_penalty` | Trace inference: time between last traversal on approach edge and first traversal on departure edge, filtered to through-traffic | `maneuver_penalty` magnitude; justification for forking turn-cost arrays |
 | Alley vs through-road speed delta (hẻm / ngõ average speed vs adjacent residential mean) | Validate `alley_penalty` magnitude | Trace speed samples on edges tagged `highway=service` with alley attribution | `alley_penalty` point value |
 | Ferry-edge actual usage (which VN ferry edges see real driver traffic vs which are OSM-tagged but rarely used) | Separate "major river crossings" from "Mekong small craft" | Trace snaps on edges tagged `route=ferry` | `use_ferry` point value and potential per-edge exclusion list |
-| Live-traffic coverage map by road class within HCM / HN | Decides whether `kDefaultFlowMask` including live is delivering benefit or noise per class | Aggregated over `traffic.tar` — share of L0/L1/L2 edges with a non-zero `live_speed` sample in a 7-day window | Whether to gate live traffic by class |
+| Live-traffic coverage map by road class within HCM / HN | Decides whether `kDefaultFlowMask` including live is delivering benefit or noise per class | Aggregated over `traffic.tar` - share of L0/L1/L2 edges with a non-zero `live_speed` sample in a 7-day window | Whether to gate live traffic by class |
 | Map-match turn-density histogram on representative HCM / HN traces | Pick `meili.auto.turn_penalty_factor` | Replay corpus of real traces through the map-matcher at varying factors; measure match quality (e.g. edit distance to manually-matched ground truth) | `turn_penalty_factor` point value |
-| Cross-city route length distribution | Decides whether raising `expand_within_distance[1]` from 20 km is load-bearing | Daily request log — beeline distance distribution for intra-HCM and intra-HN requests | `thor.bidirectional_astar.expand_within_distance[1]` override decision |
+| Cross-city route length distribution | Decides whether raising `expand_within_distance[1]` from 20 km is load-bearing | Daily request log - beeline distance distribution for intra-HCM and intra-HN requests | `thor.bidirectional_astar.expand_within_distance[1]` override decision |
 | Hẻm-destination success rate (% of address-level pickups that snap to the intended hẻm vs the nearest through-street) | Validates `minimum_reachability` lowering | A/B: same request corpus, reachability 50 vs 25, compare snap addresses to input addresses | `minimum_reachability` point value |
 | Node density per km² by VN district | Calibrates the urban vs rural speed profile in `default_speeds_config` | One-time derivation from the local tile extract | `default_speeds_config` VN urban / rural breakpoints |
 
@@ -1278,65 +1278,65 @@ None of the ranges above can be collapsed to a point value without the following
 
 ---
 
-## Appendix A — Citation index
+## Appendix A - Citation index
 
 All links point to `master` on `github.com/valhalla/valhalla`. For long-term stability, pin to a commit SHA.
 
 ### Data model
-- [`src/baldr/tilehierarchy.cc#L14-L30`](https://github.com/valhalla/valhalla/blob/master/src/baldr/tilehierarchy.cc#L14-L30) — three tile levels, sizes 4°/1°/0.25°
-- [`valhalla/baldr/graphid.h`](https://github.com/valhalla/valhalla/blob/master/valhalla/baldr/graphid.h) — 64-bit GraphId definition
-- [`valhalla/baldr/graphreader.h#L713`](https://github.com/valhalla/valhalla/blob/master/valhalla/baldr/graphreader.h#L713) — `RecoverShortcut`
+- [`src/baldr/tilehierarchy.cc#L14-L30`](https://github.com/valhalla/valhalla/blob/master/src/baldr/tilehierarchy.cc#L14-L30) - three tile levels, sizes 4°/1°/0.25°
+- [`valhalla/baldr/graphid.h`](https://github.com/valhalla/valhalla/blob/master/valhalla/baldr/graphid.h) - 64-bit GraphId definition
+- [`valhalla/baldr/graphreader.h#L713`](https://github.com/valhalla/valhalla/blob/master/valhalla/baldr/graphreader.h#L713) - `RecoverShortcut`
 
 ### Hierarchy and limits
-- [`valhalla/sif/hierarchylimits.h#L44-L47`](https://github.com/valhalla/valhalla/blob/master/valhalla/sif/hierarchylimits.h#L44-L47) — `StopExpanding` formula
-- [`valhalla/sif/hierarchylimits.h#L21-L29`](https://github.com/valhalla/valhalla/blob/master/valhalla/sif/hierarchylimits.h#L21-L29) — defaults `{0, 400, 100}` and `expand_within_dist`
-- [`valhalla/sif/hierarchylimits.h`](https://github.com/valhalla/valhalla/blob/master/valhalla/sif/hierarchylimits.h) — `RelaxHierarchyLimits` (retry path)
+- [`valhalla/sif/hierarchylimits.h#L44-L47`](https://github.com/valhalla/valhalla/blob/master/valhalla/sif/hierarchylimits.h#L44-L47) - `StopExpanding` formula
+- [`valhalla/sif/hierarchylimits.h#L21-L29`](https://github.com/valhalla/valhalla/blob/master/valhalla/sif/hierarchylimits.h#L21-L29) - defaults `{0, 400, 100}` and `expand_within_dist`
+- [`valhalla/sif/hierarchylimits.h`](https://github.com/valhalla/valhalla/blob/master/valhalla/sif/hierarchylimits.h) - `RelaxHierarchyLimits` (retry path)
 
 ### A\* heuristic and costing
-- [`valhalla/thor/astarheuristic.h#L60-L64`](https://github.com/valhalla/valhalla/blob/master/valhalla/thor/astarheuristic.h#L60-L64) — `Get(ll) = dist × costfactor`, "MUST UNDERESTIMATE"
-- [`valhalla/sif/dynamiccost.h`](https://github.com/valhalla/valhalla/blob/master/valhalla/sif/dynamiccost.h) — `AStarCostFactor()` contract
-- [`src/sif/autocost.cc#L298-L300`](https://github.com/valhalla/valhalla/blob/master/src/sif/autocost.cc#L298-L300) — `AStarCostFactor` for auto
-- [`src/sif/autocost.cc#L938-L1008`](https://github.com/valhalla/valhalla/blob/master/src/sif/autocost.cc) — `EdgeCost` formula
-- [`src/sif/autocost.cc#L1010-L1099`](https://github.com/valhalla/valhalla/blob/master/src/sif/autocost.cc) — `TransitionCost` formula
+- [`valhalla/thor/astarheuristic.h#L60-L64`](https://github.com/valhalla/valhalla/blob/master/valhalla/thor/astarheuristic.h#L60-L64) - `Get(ll) = dist × costfactor`, "MUST UNDERESTIMATE"
+- [`valhalla/sif/dynamiccost.h`](https://github.com/valhalla/valhalla/blob/master/valhalla/sif/dynamiccost.h) - `AStarCostFactor()` contract
+- [`src/sif/autocost.cc#L298-L300`](https://github.com/valhalla/valhalla/blob/master/src/sif/autocost.cc#L298-L300) - `AStarCostFactor` for auto
+- [`src/sif/autocost.cc#L938-L1008`](https://github.com/valhalla/valhalla/blob/master/src/sif/autocost.cc) - `EdgeCost` formula
+- [`src/sif/autocost.cc#L1010-L1099`](https://github.com/valhalla/valhalla/blob/master/src/sif/autocost.cc) - `TransitionCost` formula
 
 ### Algorithms
 - [`src/thor/unidirectional_astar.cc`](https://github.com/valhalla/valhalla/blob/master/src/thor/unidirectional_astar.cc)
-- [`src/thor/bidirectional_astar.cc#L146`](https://github.com/valhalla/valhalla/blob/master/src/thor/bidirectional_astar.cc#L146) — initial `cost_threshold = +∞`
-- [`src/thor/bidirectional_astar.cc#L768-L778`](https://github.com/valhalla/valhalla/blob/master/src/thor/bidirectional_astar.cc#L768-L778) — forward termination (`route_lower_bound > cost_threshold_`)
-- [`src/thor/bidirectional_astar.cc#L623-L624`](https://github.com/valhalla/valhalla/blob/master/src/thor/bidirectional_astar.cc#L623-L624) — meeting detection (`opp_edgeid` already `kPermanent` in reverse)
-- [`src/thor/bidirectional_astar.cc#L894-L901`](https://github.com/valhalla/valhalla/blob/master/src/thor/bidirectional_astar.cc#L894-L901) — `threshold_delta` continue-past-first-meet (`SetForwardConnection`)
-- [`src/thor/bidirectional_astar.cc#L546-L561`](https://github.com/valhalla/valhalla/blob/master/src/thor/bidirectional_astar.cc#L546-L561) — forward/reverse `TimeInfo` construction (context for #5616)
-- [`src/thor/costmatrix.cc`](https://github.com/valhalla/valhalla/blob/master/src/thor/costmatrix.cc) — matrix
-- [`src/thor/isochrone.cc`](https://github.com/valhalla/valhalla/blob/master/src/thor/isochrone.cc) — isochrone
-- [`src/thor/multimodal.cc`](https://github.com/valhalla/valhalla/blob/master/src/thor/multimodal.cc) — multimodal
+- [`src/thor/bidirectional_astar.cc#L146`](https://github.com/valhalla/valhalla/blob/master/src/thor/bidirectional_astar.cc#L146) - initial `cost_threshold = +∞`
+- [`src/thor/bidirectional_astar.cc#L768-L778`](https://github.com/valhalla/valhalla/blob/master/src/thor/bidirectional_astar.cc#L768-L778) - forward termination (`route_lower_bound > cost_threshold_`)
+- [`src/thor/bidirectional_astar.cc#L623-L624`](https://github.com/valhalla/valhalla/blob/master/src/thor/bidirectional_astar.cc#L623-L624) - meeting detection (`opp_edgeid` already `kPermanent` in reverse)
+- [`src/thor/bidirectional_astar.cc#L894-L901`](https://github.com/valhalla/valhalla/blob/master/src/thor/bidirectional_astar.cc#L894-L901) - `threshold_delta` continue-past-first-meet (`SetForwardConnection`)
+- [`src/thor/bidirectional_astar.cc#L546-L561`](https://github.com/valhalla/valhalla/blob/master/src/thor/bidirectional_astar.cc#L546-L561) - forward/reverse `TimeInfo` construction (context for #5616)
+- [`src/thor/costmatrix.cc`](https://github.com/valhalla/valhalla/blob/master/src/thor/costmatrix.cc) - matrix
+- [`src/thor/isochrone.cc`](https://github.com/valhalla/valhalla/blob/master/src/thor/isochrone.cc) - isochrone
+- [`src/thor/multimodal.cc`](https://github.com/valhalla/valhalla/blob/master/src/thor/multimodal.cc) - multimodal
 
 ### Traffic
-- [`valhalla/baldr/traffictile.h#L45-L57`](https://github.com/valhalla/valhalla/blob/master/valhalla/baldr/traffictile.h#L45-L57) — `TrafficSpeed` bit-packed struct
-- [`valhalla/baldr/traffictile.h#L133-L140`](https://github.com/valhalla/valhalla/blob/master/valhalla/baldr/traffictile.h#L133-L140) — `TrafficTileHeader` layout
-- [`valhalla/baldr/traffictile.h#L146-L150`](https://github.com/valhalla/valhalla/blob/master/valhalla/baldr/traffictile.h#L146-L150) — `static_assert`s (sizes enforced)
-- [`valhalla/baldr/traffictile.h#L221-L222`](https://github.com/valhalla/valhalla/blob/master/valhalla/baldr/traffictile.h#L221-L222) — `volatile` pointers (live updates)
-- [`valhalla/baldr/graphtile.h#L811-L816`](https://github.com/valhalla/valhalla/blob/master/valhalla/baldr/graphtile.h#L811-L816) — `LIVE_SPEED_FADE = 1/3600` plus multiplier
-- [`valhalla/baldr/graphtile.h#L860-L863`](https://github.com/valhalla/valhalla/blob/master/valhalla/baldr/graphtile.h#L860-L863) — final blend formula
-- [`valhalla/baldr/graphtile.h#L788-L793`](https://github.com/valhalla/valhalla/blob/master/valhalla/baldr/graphtile.h#L788-L793) — docstring confirming bidirectional sets `seconds_from_now = 0`
-- [`valhalla/baldr/graphtile.h#L857-L876`](https://github.com/valhalla/valhalla/blob/master/valhalla/baldr/graphtile.h#L857-L876) — predicted → constrained → freeflow priority
-- [`proto/options.proto#L415-L421`](https://github.com/valhalla/valhalla/blob/master/proto/options.proto#L415-L421) — `DateTimeType` enum
+- [`valhalla/baldr/traffictile.h#L45-L57`](https://github.com/valhalla/valhalla/blob/master/valhalla/baldr/traffictile.h#L45-L57) - `TrafficSpeed` bit-packed struct
+- [`valhalla/baldr/traffictile.h#L133-L140`](https://github.com/valhalla/valhalla/blob/master/valhalla/baldr/traffictile.h#L133-L140) - `TrafficTileHeader` layout
+- [`valhalla/baldr/traffictile.h#L146-L150`](https://github.com/valhalla/valhalla/blob/master/valhalla/baldr/traffictile.h#L146-L150) - `static_assert`s (sizes enforced)
+- [`valhalla/baldr/traffictile.h#L221-L222`](https://github.com/valhalla/valhalla/blob/master/valhalla/baldr/traffictile.h#L221-L222) - `volatile` pointers (live updates)
+- [`valhalla/baldr/graphtile.h#L811-L816`](https://github.com/valhalla/valhalla/blob/master/valhalla/baldr/graphtile.h#L811-L816) - `LIVE_SPEED_FADE = 1/3600` plus multiplier
+- [`valhalla/baldr/graphtile.h#L860-L863`](https://github.com/valhalla/valhalla/blob/master/valhalla/baldr/graphtile.h#L860-L863) - final blend formula
+- [`valhalla/baldr/graphtile.h#L788-L793`](https://github.com/valhalla/valhalla/blob/master/valhalla/baldr/graphtile.h#L788-L793) - docstring confirming bidirectional sets `seconds_from_now = 0`
+- [`valhalla/baldr/graphtile.h#L857-L876`](https://github.com/valhalla/valhalla/blob/master/valhalla/baldr/graphtile.h#L857-L876) - predicted → constrained → freeflow priority
+- [`proto/options.proto#L415-L421`](https://github.com/valhalla/valhalla/blob/master/proto/options.proto#L415-L421) - `DateTimeType` enum
 
 ### External references
-- [Issue #5616 — bidirectional live-traffic fade bug](https://github.com/valhalla/valhalla/issues/5616)
-- [PR #2268 — original live-traffic support](https://github.com/valhalla/valhalla/pull/2268)
-- [PR #3398 — ETA calculation correction](https://github.com/valhalla/valhalla/pull/3398)
+- [Issue #5616 - bidirectional live-traffic fade bug](https://github.com/valhalla/valhalla/issues/5616)
+- [PR #2268 - original live-traffic support](https://github.com/valhalla/valhalla/pull/2268)
+- [PR #3398 - ETA calculation correction](https://github.com/valhalla/valhalla/pull/3398)
 - [CHANGELOG](https://github.com/valhalla/valhalla/blob/master/CHANGELOG.md)
 
 ---
 
-## Appendix B — Diagram-to-code cross-reference
+## Appendix B - Diagram-to-code cross-reference
 
 - **Image #4** (bidirectional tree) maps onto §4.2. The `mu` annotations in the diagram equal `cost_threshold_` in code. The "C found in both directions" box equals the `edgestatus_reverse_.Get(fwd_pred.opp_edgeid()) == kPermanent` branch at [`bidirectional_astar.cc#L623`](https://github.com/valhalla/valhalla/blob/master/src/thor/bidirectional_astar.cc#L623).
 - **Image #5** (unidirectional tree) maps onto §4.1. The "Came From" map equals the `EdgeLabel::predecessor()` chain reconstructed by `FormPath()`.
 
 ---
 
-## Appendix C — Raw debug trace snippets
+## Appendix C - Raw debug trace snippets
 
 From a production debug trace (9.84 km Hanoi route, 2026-04-14):
 
@@ -1354,7 +1354,7 @@ step 1: INIT BidirectionalAStar
   hierarchy L1: max_up_transitions=400 expand_within_dist=20 km    ← bidir variant
   hierarchy L2: max_up_transitions=100 expand_within_dist=5 km
 
-step 4: MAIN LOOP — alternating fwd/rev expansion
+step 4: MAIN LOOP - alternating fwd/rev expansion
   [rev] TILE LOAD #1 tile=2/639062/0 L2 nodes=39201  edges=87306
   [fwd] TILE LOAD #2 tile=2/640503/0 L2 nodes=137361 edges=321546
   [fwd] TILE LOAD #3 tile=1/40245/0  L1 nodes=73718  edges=164357
@@ -1366,12 +1366,12 @@ step 4: MAIN LOOP — alternating fwd/rev expansion
   [fwd] HIERARCHY PRUNE L2: up_transitions=194 > max=100
                             AND dist=5008 m > expand_within=5000 m
 
-step 5: FIRST CONNECTION — forward met reverse
+step 5: FIRST CONNECTION - forward met reverse
   meeting edge = 0/2501/73729       ← L0 highway tile
   connection_cost = 1786.20
   cost_threshold  = 1786.20 + 420.0 = 2206.20
 
-step 6: TERMINATE — rev sortcost 2214.04 > threshold 2206.20
+step 6: TERMINATE - rev sortcost 2214.04 > threshold 2206.20
 step 8: DONE
   best path: 254 edges, 16.629 km
   total time: 1119.6 s (18.66 min)
