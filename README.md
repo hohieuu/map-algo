@@ -401,41 +401,6 @@ All three levels, loaded on demand as the frontier crossed tile boundaries. A si
 
 ---
 
-## 2. GraphId - the 48-bit "address" of every edge and node
-
-Every routable element has a 64-bit `GraphId` packed as:
-
-```
-[ tile_id : 25 bits ] [ level : 3 bits ] [ id : 21 bits ] [ spare : 15 bits ]
-```
-
-That is the addressable namespace Valhalla operates in. `GetGraphTile(id)` is a hash lookup; `edge(id)` is pointer arithmetic off a mmap'd base. Result: **O(1) edge access, zero deserialisation cost, safe to share read-only across threads**.
-
-The **same numbering scheme is used by the traffic tiles** (see §5), which is why overlaying live speed is pointer arithmetic and not a database join: routing edge #12345 in tile T corresponds to `TrafficSpeed[12345]` in traffic tile T, one-to-one.
-
----
-
-## 3. The Visualisation Tool - `tools/tile_browser.html`
-
-An in-tree browser-based tool is available for inspecting tiles, live-traffic coverage, and algorithm expansion.
-
-**What it renders** (from the in-tree `tile_browser.html`):
-
-
-| Feature                                                                  | What it shows                                                                                   |
-| ------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
-| Three-level tile grid (4°/1°/0.25°) coloured red/orange/yellow           | Coverage for any bounding box                                                                   |
-| Edges coloured by `level`, `road_class`, historical speed, or live speed | Live-traffic health check                                                                       |
-| Shortcut edges (dashed purple) on L0/L1                                  | Where the big hops live                                                                         |
-| Route with expansion animation                                           | Forward frontier (blue = settled, cyan = reached), reverse (orange = settled, yellow = reached) |
-| Tile loading feed                                                        | Each tile with edge count and level, in load order                                              |
-| Algorithm step annotations                                               | Detects the "hierarchy climb" when three or more L2 tiles have been touched                     |
-
-
-**Data path:** it queries the running `valhalla_service` at `/tile`, `/status`, `/route`, and `/expansion`. The `/expansion` endpoint streams every edge the algorithm settled or reached, in order, with `edge_status ∈ {s, r}` and `expansion_type ∈ {0=fwd, 1=rev}` - this is what drives the animation.
-
----
-
 ## 4. Algorithms - Easy → Medium → Hard
 
 ### 4.0 Which algorithm runs when? (decision tree)
