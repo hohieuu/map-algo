@@ -137,6 +137,235 @@ GraphTileHeader → NodeInfo[] → DirectedEdge[] → EdgeInfo[] → Signs → R
 
 You `mmap` the file, cast pointers to structs, and index by offset. **Zero parsing cost** - this is how Valhalla loads Earth-scale data in milliseconds. The `mmap` approach also means multiple worker processes on the same machine share the same physical memory pages: the OS pays for the map once, every worker gets zero-copy access.
 
+### Real example: 28bis Mạc Đĩnh Chi, Q1, HCMC
+
+What does that binary blob actually contain for a real Vietnamese address? We `POST /locate` with `{lat: 10.7889, lon: 106.7005}` against the running tileset. Every field below is returned verbatim by Valhalla - no invention, no rounding.
+
+The point snaps to a 40 m alley behind the building - `Hẻm 16 Đinh Tiên Hoàng` - which is the physical access road for 28bis. Two `DirectedEdge` records are returned, because every OSM way is stored as a forward/backward pair.
+
+```
+INPUT              lat=10.7889  lon=106.7005
+SNAP               correlated=(10.788679, 106.700722)   distance=34.6 m   side=right
+                   → percent_along = 17.3% of the way from edge start
+
+TILE FILE          2/000/581/466.gph        ← Level 2 (0.25° × 0.25°)
+                   tile_id = 581466         covers a 28 km × 28 km box near HCMC
+
+GRAPH-ID (edge)    value = 2,809,483,688,658  (64-bit)
+                   = (id << 25) | (tile_id << 3) | level
+                   = (83729 << 25) | (581466 << 3) | 2
+                   → level=2, tile=581466, id=83729
+                   → fetch: edges_base + 83729 * sizeof(DirectedEdge)   (pure pointer math)
+
+EDGE-INFO          way_id   = 605149488              (original OSM way)
+                   names    = ["Hẻm 16 Đinh Tiên Hoàng"]
+                   shape    = "kfnqSwlnojEwNeO"     (3-vertex encoded polyline)
+                   speed_limit = 0                   (not tagged in OSM)
+
+CLASSIFICATION     classification = service_other
+                   use            = alley
+                   surface        = paved_smooth
+                   link = false, internal = false
+
+GEO-ATTRIBUTES     length       = 40 m
+                   weighted_grade / max_up / max_down = 0.0   (flat)
+                   curvature    = 0
+
+END-NODE           value = 1,340,806,200,018
+                   level=2, tile=581466, id=39959
+                   → same packing formula, different slot in NodeInfo[]
+
+SPEEDS             type             = classified        ← no live/predicted profile
+                   default          = 20 km/h           ← alley default
+                   free_flow        = 0  (not built)
+                   constrained_flow = 0  (not built)
+                   predicted        = false
+
+LIVE-SPEED         overall_speed = 20 km/h
+                   speed_0/1/2   = 20 / 20 / 20
+                   congestion_0/1/2 = 0.62 / 0.62 / 0.62   (~62% red)
+                   breakpoint_0/1   = 1.0                  (one segment, no split)
+                   ← loaded from a SEPARATE traffic.tar, keyed by the same edge_id
+
+ACCESS (bit mask)  car, truck, motorcycle, moped, bicycle, bus, taxi,
+                   pedestrian, wheelchair, HOV = true
+                   emergency = false
+
+FLAGS              destination_only      = true     ← "only enter if you live here"
+                   destination_only_hgv  = true
+                   forward               = false    ← this is the REVERSE half of the way
+                   lane_count            = 1
+                   toll / bridge / tunnel / round_about / traffic_signal = false
+                   sidewalk_left / sidewalk_right = false
+
+REACH              outbound_reach = 50    inbound_reach = 50
+                   → Loki uses these to decide if the candidate is "connected enough"
+                     to actually start/end a route from.
+```
+
+The second edge in the same response is the twin: `edge_id.id = 83734`, `forward = true`, `live_speed = 16 km/h` (the opposite direction through the alley is slower right now).
+
+#### What a student should take away
+
+| Observation | Why it matters |
+|---|---|
+| **One building → 1 OSM way → 2 DirectedEdges** | Forward/backward halves store turn restrictions, speeds, and access flags independently. That is why one-way streets and split lane counts work without any "direction" field in the routing code. |
+| **`2/000/581/466.gph` is one file** | It is a fixed-layout binary. Finding edge 83729 is literally `mmap_base + header.edge_offset + 83729 * sizeof(DirectedEdge)`. Zero SQL, zero parse, zero allocation per lookup. |
+| **GraphId is reversible arithmetic** | Given the 64-bit value, anyone can recover `(level, tile_id, id)` with three bit-ops. No lookup table, no index. That is why `GetGraphTile(id)` is O(1) and safe across threads. |
+| **`live_speed` is an overlay** | The `.gph` file never changes during the day. The traffic tile (`traffic.tar`) is a parallel byte array indexed by the same edge slot - update traffic, pointer lands in the same offset, no re-link. |
+| **`destination_only = true` on an alley** | Valhalla will only cross this edge if the origin or destination is on it (or after a second-pass fallback). Great for privacy of residential lanes, occasionally hostile to real Saigon shortcuts - see §11 for the Vietnam tuning. |
+| **`speed_limit = 0`, `default = 20`, `free_flow = 0`** | OSM did not tag this alley, so the router falls back to the classified default. No predicted profile was built either. In HCMC peak hour, 20 km/h through a 1-lane hẻm is optimistic - another knob §11 discusses. |
+
+#### Contrast: the same query 60 m west hits Level 0
+
+Same neighbourhood, coordinate `(10.78796, 106.70022)` - now on Đinh Tiên Hoàng itself:
+
+```
+TILE FILE     0/002/321.gph            ← Level 0 (highway tier), 4° × 4° tile
+GRAPH-ID      value = 3,277,596,936,328   → level=0, tile=2321, id=97680
+WAY-ID        231983460    names = ["Đinh Tiên Hoàng"]
+CLASSIFY      classification=primary   use=road   surface=paved_smooth
+SPEEDS        type=tagged  default=60  speed_limit=60   ← OSM tagged
+LANES         lane_count=3   sidewalk_left=true  sidewalk_right=true
+FLAGS         has_sign=true  (this edge has a junction sign record)
+```
+
+Two buildings 60 m apart, two completely different tile files, two completely different GraphIds, two completely different defaults (alley 20 km/h vs primary 60 km/h). That is the §1 hierarchy, made concrete.
+
+### The math: how one edge knows its twin, how one node finds its neighbors
+
+Students usually stop here and ask two questions:
+
+> **Q1.** "If each record is *directed*, where is the reverse of that alley?"
+> **Q2.** "Given just a node, how do I discover what is connected to it?"
+
+Both answers are pure pointer arithmetic. No joins, no indexes, no graph traversal.
+
+#### Model
+
+Define an OSM way $W$. Valhalla stores it as an **ordered pair** of DirectedEdge records:
+
+$$W \;\longmapsto\; (e^{+}, e^{-})$$
+
+with three hard invariants:
+
+$$
+\begin{aligned}
+e^{+}.\text{endnode} &= e^{-}.\text{startnode} \\
+e^{-}.\text{endnode} &= e^{+}.\text{startnode} \\
+e^{+}.\text{edge\_info\_offset} &= e^{-}.\text{edge\_info\_offset}
+\end{aligned}
+$$
+
+Meaning: a DirectedEdge only stores its **end** node. To get the **start** node you go through the twin. And the human-readable payload (names, shape, way_id, speed_limit) lives **once** in `EdgeInfo[]` - both halves point to the same offset, so "Hẻm 16 Đinh Tiên Hoàng" is never duplicated.
+
+**Twin lookup in one expression:**
+
+$$\text{twin}(e) \;=\; \text{edges}\bigl[\, e.\text{endnode}.\text{edge\_index} + e.\text{opp\_index} \,\bigr]$$
+
+Three field reads. That is the whole operation.
+
+#### Live proof: the alley at 28bis
+
+From our `/locate` response on way `605149488`:
+
+$$
+\begin{array}{lcl}
+e^{+} &=& \text{edge 83734},\; \text{forward}=\text{true},\; \text{endnode}=39958,\; \text{live}=16\text{ km/h} \\
+e^{-} &=& \text{edge 83729},\; \text{forward}=\text{false},\; \text{endnode}=39959,\; \text{live}=20\text{ km/h}
+\end{array}
+$$
+
+Apply the invariants:
+
+$$
+\text{start}(e^{+}) = e^{-}.\text{endnode} = 39959
+\qquad
+\text{start}(e^{-}) = e^{+}.\text{endnode} = 39958
+$$
+
+So the forward half runs $39959 \to 39958$ and the reverse runs $39958 \to 39959$. Same 40 m of asphalt, two independent records. Notice the two halves carry **different** live speeds (16 vs 20) - entering the alley and leaving it are separate traffic measurements, which is exactly why Valhalla splits them.
+
+#### Node discovery (Q2)
+
+A `NodeInfo` record carries two scalars:
+
+$$
+N.\text{edge\_index} = \text{first outgoing edge id in this tile} \quad
+N.\text{edge\_count} = k \;\text{outgoing edges (same tile, same level)}
+$$
+
+All outgoing edges of $N$ are **contiguous in memory**:
+
+$$
+\text{Out}(N) \;=\; \bigl\{\, \text{edges}[\, N.\text{edge\_index} + j\,] \;:\; 0 \le j < k \,\bigr\}
+$$
+
+The neighbors of $N$ fall out immediately:
+
+$$
+\text{Neighbors}(N) \;=\; \bigl\{\, e.\text{endnode} \;:\; e \in \text{Out}(N) \,\bigr\}
+$$
+
+Cost of listing all neighbors of a node = $k$ struct reads. No traversal, no hash lookup.
+
+#### Live proof: node 40041 in tile 581466
+
+`/locate` at `(10.7889, 106.69996)` with `node_snap_tolerance=30` snapped to a real intersection and returned:
+
+```
+NODE          value = 1,343,557,663,442   → level=2, tile=581466, id=40041
+POSITION      (10.788928, 106.700024)
+type          street_intersection     intersection_type = regular
+local_edge_count = 3                  ← |Out(N)| at this level
+transition_count = 1                  ← 1 upward link (L2 → L1 copy of this node)
+density       = 15                    ← ~15 edges/km² neighbourhood
+traffic_signal = false
+drive_on_right = false                ← ⚠ surprising for HCMC, flagged in §11
+```
+
+The three edges incident to node 40041 (the four rows below are two twins on Hẻm 21 plus two forward halves on Nguyễn Đình Chiểu - picked up by the locate's wider radius):
+
+| edge id | way | name | forward | endnode | len |
+|---:|---:|---|:-:|---:|---:|
+| 83961 | 1127702787 | Hẻm 21 Đường Nguyễn Đình Chiểu | false | **40041** | 28 m |
+| 83903 | 1127702787 | Hẻm 21 Đường Nguyễn Đình Chiểu | true  | 40070 | 28 m |
+| 87660 | 1173852133 | Nguyễn Đình Chiểu               | true  | 39617 | 70 m |
+| 90663 | 1173852133 | Nguyễn Đình Chiểu               | true  | 39636 | 27 m |
+
+Reading this like a student:
+
+- Edge **83961** has `endnode = 40041` - it flows **into** our node. Its twin, edge 83903, flows **out** of 40041 toward node 40070. So from 40041 you can reach 40070 down the alley.
+- Edges **87660** and **90663** both run along Nguyễn Đình Chiểu, the cross street. Their endpoints (39617 and 39636) are the two adjacent intersections on that road, ~70 m and ~27 m away.
+
+Putting it as a set:
+
+$$
+\text{Neighbors}(40041) \;=\; \{\, 40070,\; 39617,\; 39636 \,\} \qquad \text{(3 nodes, matches } \texttt{local\_edge\_count}=3\text{)}
+$$
+
+#### Putting it together: the A* inner loop, as math
+
+Given current node $N$ and goal $G$, the step Valhalla executes at each pop of the open set is:
+
+$$
+\text{for } e \in \text{Out}(N): \quad
+\begin{cases}
+N' \;=\; e.\text{endnode} \\[2pt]
+g'  \;=\; g(N) + \text{edge\_cost}(e) \\[2pt]
+f'  \;=\; g' + h(N', G) \\[2pt]
+\text{push } (N', f') \text{ on open set}
+\end{cases}
+$$
+
+If $e$ crosses a tile boundary, one extra step:
+
+$$
+\text{GetGraphTile}(N'.\text{tile\_id},\, N'.\text{level}) \;=\; \text{mmap}\bigl(\text{tile path}(N')\bigr)
+$$
+
+That is it. No string parsing, no DB query, no allocation per step. **A forward scan across `edges[edge_index .. edge_index + edge_count]`, a field read for `endnode`, arithmetic for $f$ and $g$, done.** This is why a 2 km city route can settle tens of thousands of nodes in under 30 ms - every node expansion is a handful of L1 cache lines.
+
 ### Concrete evidence from debug log
 
 A single short route (9.84 km Hanoi inner-city) touched 7 tiles:
@@ -555,7 +784,7 @@ They are deliberately different. If cost were equal to time, the router would al
 Total path cost is the sum of **two things per edge** 
 The relationship between them is sequential: you travel *along* a road (`edge_cost`), then you turn/transition *onto* the next road (`transition_cost`).
 
-*(Note to avoid confusion: In Valhalla, the word "transition" is used in two different ways. Here, `transition_cost` means the penalty for turning at an intersection (e.g., waiting at a red light or making a sharp left turn). Earlier in the document, `up_transition_count` meant promoting from a lower-level road to a higher-level road (e.g., Alley to Arterial). One edge can have multiple `transition_costs` if it crosses many intersections, but it only triggers an `up_transition` when the road class actually upgrades! Evidence: `up_transition_count` is only incremented when the algorithm encounters a special `NodeTransition` object where `trans->up() == true`, at `src/thor/unidirectional_astar.cc#L126-L127`)*
+*(Note to avoid confusion: In Valhalla, the word "transition" is used in two different ways. Here, `transition_cost` means the penalty for turning at an intersection (e.g., waiting at a red light or making a sharp left turn). Earlier in the document, `up_transition_count` meant promoting from a lower-level road to a higher-level road (e.g., Alley to Arterial). One edge can have multiple `transition_costs` if it crosses many intersections, but it only triggers an `up_transition` when the road class actually upgrades! Evidence: `up_transition_count` is only incremented when the algorithm encounters a special `NodeTransition` object where `trans->up() == true`, at `src/thor/unidirectional_astar.cc#L126-L127`. Most normal intersections have `nodeinfo->transition_count() == 0`, meaning they don't have any `NodeTransition` objects at all, which is why the `up_transition_count` grows so slowly!)*
 
 ```text
 path_cost = Σ (edge_cost_i + transition_cost_i)
