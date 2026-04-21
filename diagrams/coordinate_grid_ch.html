@@ -1,0 +1,976 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Contraction Hierarchy — 37-Node Road Network (Live-Traffic Demo)</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #ffffff;
+    color: #2a2a2a;
+    font-family: "IBM Plex Mono", "Fira Code", "Consolas", monospace;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 32px 16px;
+    min-height: 100vh;
+  }
+  h1 { font-size: 18px; font-weight: 600; color: #1a1a1a; letter-spacing: 0.3px; margin-bottom: 4px; }
+  .subtitle { font-size: 12px; color: #888; margin-bottom: 22px; text-align: center; line-height: 1.6; max-width: 920px; }
+  svg text { font-family: "IBM Plex Mono", "Fira Code", "Consolas", monospace; }
+  .legend {
+    display: flex; gap: 18px; flex-wrap: wrap; justify-content: center;
+    margin-bottom: 18px; font-size: 11px; color: #555;
+  }
+  .legend span { display: flex; align-items: center; gap: 5px; }
+  .legend .sw { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
+  .phase-title {
+    font-size: 14px; color: #1a1a1a; font-weight: 600;
+    margin: 22px 0 6px; align-self: flex-start; max-width: 920px; width: 100%;
+    padding-left: 4px;
+  }
+  .phase-sub { font-size: 11px; color: #888; font-weight: 400; }
+  .info {
+    max-width: 920px; width: 100%;
+    background: #f8f8f7; border: 1px solid #e0e0dc; border-radius: 4px;
+    padding: 16px 20px; font-size: 12px; line-height: 1.9; color: #444;
+    margin-bottom: 14px;
+  }
+  .info .title {
+    font-size: 13px; color: #1a1a1a; font-weight: 600; margin-bottom: 6px;
+    border-bottom: 1px solid #e0e0dc; padding-bottom: 5px;
+  }
+  .info table { width: 100%; border-collapse: collapse; font-size: 11px; margin-top: 6px; }
+  .info th, .info td { text-align: left; padding: 4px 8px; border-bottom: 1px solid #ececea; }
+  .info th { color: #1a1a1a; }
+  .local { color: #2563eb; }
+  .arterial { color: #b45309; }
+  .highway { color: #dc2626; }
+  .shortcut { color: #2d7d46; }
+  .result { font-weight: 600; }
+  .traffic-slow { color: #b91c1c; font-weight: 700; }
+  .traffic-mild { color: #c2410c; font-weight: 600; }
+  .traffic-free { color: #166534; font-weight: 600; }
+</style>
+</head>
+<body>
+
+<h1>Contraction Hierarchy (Valhalla-style) — 37-Node Network · Free-flow baseline + Live-Traffic Overlay</h1>
+<p class="subtitle">
+  3 hierarchy levels. 5 locals per district, scattered 2D with y up to 5.<br>
+  Phases 1&ndash;3 run on the <b>free-flow baseline</b> (uniform: highway 3.0, arterial 5.0).
+  <b>Phase 4</b> overlays a <b>live-traffic update</b> on 4 edges &mdash; the optimal route
+  flips without rebuilding CH.<br>
+  Route L1 (&minus;1, 0) &rarr; L9 (31, 0). Weights stay admissible
+  (every edge weight &ge; Euclidean distance), so the heuristic remains consistent.
+</p>
+
+<div class="legend">
+  <span><span class="sw" style="background:#2563eb"></span> local (level 0)</span>
+  <span><span class="sw" style="background:#b45309"></span> arterial (level 1)</span>
+  <span><span class="sw" style="background:#dc2626"></span> highway (level 2)</span>
+  <span><span class="sw" style="background:#2d7d46"></span> start / shortcuts</span>
+  <span><span class="sw" style="background:#92400e"></span> goal</span>
+  <span><span class="sw" style="background:#b91c1c"></span> congested edge</span>
+  <span><span class="sw" style="background:repeating-linear-gradient(45deg,#aaa,#aaa 2px,#fff 2px,#fff 4px);border:1px solid #888"></span> contracted (kept, invisible to search)</span>
+</div>
+
+<!-- =================================================================
+     Coordinate mapping (Phase 1/2/3):
+       x_pixel = 60 + (x+2) * 24    — x range [-2, 31] → pixels [60, 852]
+       y_pixel = 370 - y * 55        — y range [0, 5]   → pixels [370, 95]
+     Grid band centers:
+       y=0 → 370 (locals y=0)
+       y=1 → 315 (locals y=1)
+       y=2 → 260 (ARTERIAL)
+       y=3 → 205 (locals y=3)
+       y=4 → 150 (HIGHWAY)
+       y=5 →  95 (locals y=5, above highway level!)
+     ================================================================ -->
+
+<!-- ================================================================= -->
+<!-- PHASE 1 — FULL GRAPH                                              -->
+<!-- ================================================================= -->
+<p class="phase-title">Phase 1 — Full graph, 37 nodes <span class="phase-sub">free-flow baseline — uniform edge weights, no traffic yet</span></p>
+
+<svg width="920" height="430" viewBox="0 0 920 430" xmlns="http://www.w3.org/2000/svg">
+  <rect width="920" height="430" fill="#ffffff" rx="4"/>
+
+  <!-- level-band grid lines -->
+  <g stroke="#ececea" stroke-width="1">
+    <line x1="30" y1="370" x2="890" y2="370"/>
+    <line x1="30" y1="260" x2="890" y2="260"/>
+    <line x1="30" y1="150" x2="890" y2="150"/>
+    <line x1="30" y1="95"  x2="890" y2="95"  stroke-dasharray="2,3"/>
+    <line x1="30" y1="205" x2="890" y2="205" stroke-dasharray="2,3"/>
+    <line x1="30" y1="315" x2="890" y2="315" stroke-dasharray="2,3"/>
+  </g>
+  <g fill="#aaa" font-size="9" text-anchor="end">
+    <text x="28" y="374">y=0</text>
+    <text x="28" y="319">y=1</text>
+    <text x="28" y="264">y=2</text>
+    <text x="28" y="209">y=3</text>
+    <text x="28" y="154">y=4</text>
+    <text x="28" y="99">y=5</text>
+  </g>
+  <g fill="#999" font-size="9" text-anchor="start">
+    <text x="894" y="154">level 2 · highway</text>
+    <text x="894" y="264">level 1 · arterial</text>
+    <text x="894" y="374">level 0 · locals</text>
+  </g>
+
+  <!-- District backgrounds -->
+  <g opacity="0.3">
+    <rect x="30" y="305" width="125" height="80" fill="#e8f0ff" rx="3"/>
+    <rect x="420" y="85" width="100" height="300" fill="#e8f0ff" rx="3"/>
+    <rect x="780" y="85" width="110" height="300" fill="#e8f0ff" rx="3"/>
+  </g>
+  <g font-size="10" fill="#2563eb" text-anchor="middle" font-weight="600" opacity="0.65">
+    <text x="92" y="400">D1</text>
+    <text x="470" y="400">D6</text>
+    <text x="835" y="400">D11</text>
+  </g>
+
+  <!-- =========== HIGHWAY EDGES — uniform free-flow 3.0 =========== -->
+  <g stroke="#dc2626" stroke-width="3" stroke-linecap="round" opacity="0.85">
+    <line x1="108" y1="150" x2="180" y2="150"/>
+    <line x1="180" y1="150" x2="252" y2="150"/>
+    <line x1="252" y1="150" x2="324" y2="150"/>
+    <line x1="324" y1="150" x2="396" y2="150"/>
+    <line x1="396" y1="150" x2="468" y2="150"/>
+    <line x1="468" y1="150" x2="540" y2="150"/>
+    <line x1="540" y1="150" x2="612" y2="150"/>
+    <line x1="612" y1="150" x2="684" y2="150"/>
+    <line x1="684" y1="150" x2="756" y2="150"/>
+    <line x1="756" y1="150" x2="828" y2="150"/>
+  </g>
+  <g font-size="9" text-anchor="middle" font-weight="700" fill="#991b1b">
+    <text x="144" y="140">3</text>
+    <text x="216" y="140">3</text>
+    <text x="288" y="140">3</text>
+    <text x="360" y="140">3</text>
+    <text x="432" y="140">3</text>
+    <text x="504" y="140">3</text>
+    <text x="576" y="140">3</text>
+    <text x="648" y="140">3</text>
+    <text x="720" y="140">3</text>
+    <text x="792" y="140">3</text>
+  </g>
+
+  <!-- =========== ARTERIAL EDGES — uniform 5.0 =========== -->
+  <g stroke="#b45309" stroke-width="2.5" stroke-linecap="round" opacity="0.8">
+    <line x1="108" y1="260" x2="180" y2="260"/>
+    <line x1="180" y1="260" x2="252" y2="260"/>
+    <line x1="252" y1="260" x2="324" y2="260"/>
+    <line x1="324" y1="260" x2="396" y2="260"/>
+    <line x1="396" y1="260" x2="468" y2="260"/>
+    <line x1="468" y1="260" x2="540" y2="260"/>
+    <line x1="540" y1="260" x2="612" y2="260"/>
+    <line x1="612" y1="260" x2="684" y2="260"/>
+    <line x1="684" y1="260" x2="756" y2="260"/>
+    <line x1="756" y1="260" x2="828" y2="260"/>
+  </g>
+  <g font-size="9" text-anchor="middle" font-weight="700" fill="#92400e">
+    <text x="144" y="253">5</text>
+    <text x="216" y="253">5</text>
+    <text x="288" y="253">5</text>
+    <text x="360" y="253">5</text>
+    <text x="432" y="253">5</text>
+    <text x="504" y="253">5</text>
+    <text x="576" y="253">5</text>
+    <text x="648" y="253">5</text>
+    <text x="720" y="253">5</text>
+    <text x="792" y="253">5</text>
+  </g>
+
+  <!-- =========== ARTERIAL ↔ HIGHWAY RAMPS (ends only) =========== -->
+  <g stroke="#7c3aed" stroke-width="1.4" stroke-dasharray="4,3" stroke-linecap="round" opacity="0.7">
+    <line x1="108" y1="260" x2="108" y2="150"/>
+    <line x1="828" y1="260" x2="828" y2="150"/>
+  </g>
+  <g font-size="9" fill="#7c3aed" font-weight="700" text-anchor="end">
+    <text x="104" y="207">2.0</text>
+    <text x="824" y="207">2.0</text>
+  </g>
+
+  <!-- =========== LOCAL EDGES — D1 =========== -->
+  <g stroke="#2563eb" stroke-width="1.6" stroke-linecap="round" opacity="0.65">
+    <line x1="84" y1="370" x2="108" y2="315"/>    <!-- L1-L2 -->
+    <line x1="108" y1="315" x2="132" y2="370"/>   <!-- L2-L3 -->
+    <line x1="84" y1="370" x2="60" y2="315"/>     <!-- L1-L11 -->
+    <line x1="84" y1="370" x2="84" y2="205"/>     <!-- L1-L10 -->
+  </g>
+  <!-- D1 local↔arterial ramps -->
+  <g stroke="#94a3b8" stroke-width="1" stroke-dasharray="3,2" stroke-linecap="round" opacity="0.6">
+    <line x1="84" y1="370" x2="108" y2="260"/>    <!-- L1-A1 -->
+    <line x1="108" y1="315" x2="108" y2="260"/>   <!-- L2-A1 -->
+    <line x1="132" y1="370" x2="108" y2="260"/>   <!-- L3-A1 -->
+    <line x1="84" y1="205" x2="108" y2="260"/>    <!-- L10-A1 -->
+  </g>
+
+  <!-- =========== LOCAL EDGES — D6 (the local chain!) =========== -->
+  <g stroke="#2563eb" stroke-width="1.6" stroke-linecap="round" opacity="0.65">
+    <line x1="444" y1="370" x2="468" y2="315"/>   <!-- L4-L5 -->
+    <line x1="468" y1="315" x2="492" y2="370"/>   <!-- L5-L6 -->
+    <line x1="468" y1="315" x2="468" y2="205"/>   <!-- L5-L13 -->
+    <line x1="468" y1="205" x2="468" y2="95"/>    <!-- L13-L12 -->
+  </g>
+  <!-- D6 local↔arterial ramps -->
+  <g stroke="#94a3b8" stroke-width="1" stroke-dasharray="3,2" stroke-linecap="round" opacity="0.6">
+    <line x1="444" y1="370" x2="468" y2="260"/>   <!-- L4-A6 -->
+    <line x1="468" y1="315" x2="468" y2="260"/>   <!-- L5-A6 -->
+    <line x1="492" y1="370" x2="468" y2="260"/>   <!-- L6-A6 -->
+    <line x1="468" y1="95" x2="468" y2="260"/>    <!-- L12-A6 (long ramp) -->
+  </g>
+
+  <!-- =========== LOCAL EDGES — D11 =========== -->
+  <g stroke="#2563eb" stroke-width="1.6" stroke-linecap="round" opacity="0.65">
+    <line x1="804" y1="370" x2="828" y2="315"/>   <!-- L7-L8 -->
+    <line x1="828" y1="315" x2="852" y2="370"/>   <!-- L8-L9 -->
+    <line x1="852" y1="370" x2="852" y2="205"/>   <!-- L9-L14 -->
+  </g>
+  <g stroke="#94a3b8" stroke-width="1" stroke-dasharray="3,2" stroke-linecap="round" opacity="0.6">
+    <line x1="804" y1="370" x2="828" y2="260"/>   <!-- L7-A11 -->
+    <line x1="828" y1="315" x2="828" y2="260"/>   <!-- L8-A11 -->
+    <line x1="852" y1="370" x2="828" y2="260"/>   <!-- L9-A11 -->
+    <line x1="852" y1="205" x2="828" y2="260"/>   <!-- L14-A11 -->
+    <line x1="828" y1="95" x2="828" y2="260"/>    <!-- L15-A11 (long ramp) -->
+  </g>
+
+  <!-- =========== HIGHWAY NODES =========== -->
+  <g>
+    <circle cx="108" cy="150" r="12" fill="#dc2626" stroke="#fff" stroke-width="2"/>
+    <text x="108" y="153" text-anchor="middle" fill="#fff" font-size="9" font-weight="700">H1</text>
+    <circle cx="180" cy="150" r="10" fill="#dc2626" stroke="#fff" stroke-width="1.5"/>
+    <text x="180" y="153" text-anchor="middle" fill="#fff" font-size="8" font-weight="700">H2</text>
+    <circle cx="252" cy="150" r="10" fill="#dc2626" stroke="#fff" stroke-width="1.5"/>
+    <text x="252" y="153" text-anchor="middle" fill="#fff" font-size="8" font-weight="700">H3</text>
+    <circle cx="324" cy="150" r="10" fill="#dc2626" stroke="#fff" stroke-width="1.5"/>
+    <text x="324" y="153" text-anchor="middle" fill="#fff" font-size="8" font-weight="700">H4</text>
+    <circle cx="396" cy="150" r="10" fill="#dc2626" stroke="#fff" stroke-width="1.5"/>
+    <text x="396" y="153" text-anchor="middle" fill="#fff" font-size="8" font-weight="700">H5</text>
+    <circle cx="468" cy="150" r="10" fill="#dc2626" stroke="#fff" stroke-width="1.5"/>
+    <text x="468" y="153" text-anchor="middle" fill="#fff" font-size="8" font-weight="700">H6</text>
+    <circle cx="540" cy="150" r="10" fill="#dc2626" stroke="#fff" stroke-width="1.5"/>
+    <text x="540" y="153" text-anchor="middle" fill="#fff" font-size="8" font-weight="700">H7</text>
+    <circle cx="612" cy="150" r="10" fill="#dc2626" stroke="#fff" stroke-width="1.5"/>
+    <text x="612" y="153" text-anchor="middle" fill="#fff" font-size="8" font-weight="700">H8</text>
+    <circle cx="684" cy="150" r="10" fill="#dc2626" stroke="#fff" stroke-width="1.5"/>
+    <text x="684" y="153" text-anchor="middle" fill="#fff" font-size="8" font-weight="700">H9</text>
+    <circle cx="756" cy="150" r="10" fill="#dc2626" stroke="#fff" stroke-width="1.5"/>
+    <text x="756" y="153" text-anchor="middle" fill="#fff" font-size="7" font-weight="700">H10</text>
+    <circle cx="828" cy="150" r="12" fill="#dc2626" stroke="#fff" stroke-width="2"/>
+    <text x="828" y="153" text-anchor="middle" fill="#fff" font-size="8" font-weight="700">H11</text>
+  </g>
+
+  <!-- =========== ARTERIAL NODES =========== -->
+  <g>
+    <circle cx="108" cy="260" r="12" fill="#b45309" stroke="#fff" stroke-width="2"/>
+    <text x="108" y="263" text-anchor="middle" fill="#fff" font-size="9" font-weight="700">A1</text>
+    <circle cx="180" cy="260" r="10" fill="#b45309" stroke="#fff" stroke-width="1.5"/>
+    <text x="180" y="263" text-anchor="middle" fill="#fff" font-size="8" font-weight="700">A2</text>
+    <circle cx="252" cy="260" r="10" fill="#b45309" stroke="#fff" stroke-width="1.5"/>
+    <text x="252" y="263" text-anchor="middle" fill="#fff" font-size="8" font-weight="700">A3</text>
+    <circle cx="324" cy="260" r="10" fill="#b45309" stroke="#fff" stroke-width="1.5"/>
+    <text x="324" y="263" text-anchor="middle" fill="#fff" font-size="8" font-weight="700">A4</text>
+    <circle cx="396" cy="260" r="10" fill="#b45309" stroke="#fff" stroke-width="1.5"/>
+    <text x="396" y="263" text-anchor="middle" fill="#fff" font-size="8" font-weight="700">A5</text>
+    <circle cx="468" cy="260" r="12" fill="#b45309" stroke="#fff" stroke-width="2"/>
+    <text x="468" y="263" text-anchor="middle" fill="#fff" font-size="9" font-weight="700">A6</text>
+    <circle cx="540" cy="260" r="10" fill="#b45309" stroke="#fff" stroke-width="1.5"/>
+    <text x="540" y="263" text-anchor="middle" fill="#fff" font-size="8" font-weight="700">A7</text>
+    <circle cx="612" cy="260" r="10" fill="#b45309" stroke="#fff" stroke-width="1.5"/>
+    <text x="612" y="263" text-anchor="middle" fill="#fff" font-size="8" font-weight="700">A8</text>
+    <circle cx="684" cy="260" r="10" fill="#b45309" stroke="#fff" stroke-width="1.5"/>
+    <text x="684" y="263" text-anchor="middle" fill="#fff" font-size="8" font-weight="700">A9</text>
+    <circle cx="756" cy="260" r="10" fill="#b45309" stroke="#fff" stroke-width="1.5"/>
+    <text x="756" y="263" text-anchor="middle" fill="#fff" font-size="7" font-weight="700">A10</text>
+    <circle cx="828" cy="260" r="12" fill="#b45309" stroke="#fff" stroke-width="2"/>
+    <text x="828" y="263" text-anchor="middle" fill="#fff" font-size="8" font-weight="700">A11</text>
+  </g>
+
+  <!-- =========== LOCAL NODES =========== -->
+  <g>
+    <!-- D1 -->
+    <circle cx="84" cy="370" r="13" fill="#2d7d46" stroke="#fff" stroke-width="2"/>
+    <text x="84" y="373" text-anchor="middle" fill="#fff" font-size="10" font-weight="700">L1</text>
+    <text x="84" y="400" text-anchor="middle" fill="#2d7d46" font-size="9" font-weight="600">start</text>
+    <circle cx="108" cy="315" r="11" fill="#2563eb" stroke="#fff" stroke-width="1.5"/>
+    <text x="108" y="318" text-anchor="middle" fill="#fff" font-size="9" font-weight="700">L2</text>
+    <circle cx="132" cy="370" r="11" fill="#2563eb" stroke="#fff" stroke-width="1.5"/>
+    <text x="132" y="373" text-anchor="middle" fill="#fff" font-size="9" font-weight="700">L3</text>
+    <circle cx="84" cy="205" r="11" fill="#2563eb" stroke="#fff" stroke-width="1.5"/>
+    <text x="84" y="208" text-anchor="middle" fill="#fff" font-size="8" font-weight="700">L10</text>
+    <circle cx="60" cy="315" r="11" fill="#2563eb" stroke="#fff" stroke-width="1.5"/>
+    <text x="60" y="318" text-anchor="middle" fill="#fff" font-size="8" font-weight="700">L11</text>
+
+    <!-- D6 -->
+    <circle cx="444" cy="370" r="11" fill="#2563eb" stroke="#fff" stroke-width="1.5"/>
+    <text x="444" y="373" text-anchor="middle" fill="#fff" font-size="9" font-weight="700">L4</text>
+    <circle cx="468" cy="315" r="11" fill="#2563eb" stroke="#fff" stroke-width="1.5"/>
+    <text x="468" y="318" text-anchor="middle" fill="#fff" font-size="9" font-weight="700">L5</text>
+    <circle cx="492" cy="370" r="11" fill="#2563eb" stroke="#fff" stroke-width="1.5"/>
+    <text x="492" y="373" text-anchor="middle" fill="#fff" font-size="9" font-weight="700">L6</text>
+    <circle cx="468" cy="205" r="11" fill="#2563eb" stroke="#fff" stroke-width="1.5"/>
+    <text x="468" y="208" text-anchor="middle" fill="#fff" font-size="8" font-weight="700">L13</text>
+    <circle cx="468" cy="95" r="11" fill="#2563eb" stroke="#fff" stroke-width="1.5"/>
+    <text x="468" y="98" text-anchor="middle" fill="#fff" font-size="8" font-weight="700">L12</text>
+
+    <!-- D11 -->
+    <circle cx="804" cy="370" r="11" fill="#2563eb" stroke="#fff" stroke-width="1.5"/>
+    <text x="804" y="373" text-anchor="middle" fill="#fff" font-size="9" font-weight="700">L7</text>
+    <circle cx="828" cy="315" r="11" fill="#2563eb" stroke="#fff" stroke-width="1.5"/>
+    <text x="828" y="318" text-anchor="middle" fill="#fff" font-size="9" font-weight="700">L8</text>
+    <circle cx="852" cy="370" r="13" fill="#92400e" stroke="#fff" stroke-width="2"/>
+    <text x="852" y="373" text-anchor="middle" fill="#fff" font-size="10" font-weight="700">L9</text>
+    <text x="852" y="400" text-anchor="middle" fill="#92400e" font-size="9" font-weight="600">goal</text>
+    <circle cx="852" cy="205" r="11" fill="#2563eb" stroke="#fff" stroke-width="1.5"/>
+    <text x="852" y="208" text-anchor="middle" fill="#fff" font-size="8" font-weight="700">L14</text>
+    <circle cx="828" cy="95" r="11" fill="#2563eb" stroke="#fff" stroke-width="1.5"/>
+    <text x="828" y="98" text-anchor="middle" fill="#fff" font-size="8" font-weight="700">L15</text>
+  </g>
+</svg>
+
+<div class="info">
+  <div class="title">Graph stats — 37 nodes, 3 levels, uniform free-flow weights (admissible)</div>
+  <table>
+    <tr><th>Level</th><th>Count</th><th>Base weight</th><th>Story</th></tr>
+    <tr><td class="highway">Highway (L2)</td><td>11 (H1..H11)</td><td>3.0 (uniform)</td><td>free-flow speed — what the map would give with no traffic feed</td></tr>
+    <tr><td class="arterial">Arterial (L1)</td><td>11 (A1..A11)</td><td>5.0 (uniform)</td><td>normal surface-street cost on the L1 chain</td></tr>
+    <tr><td class="local">Local (L0)</td><td>15 (5 per district)</td><td>1.5 .. 3.5</td><td>y scattered 0..5: L10(y=3), L12 &amp; L15(y=5), plus cul-de-sacs</td></tr>
+  </table>
+  <br>
+  <b>Route:</b> L1 (&minus;1, 0) &rarr; L9 (31, 0) &nbsp;·&nbsp; Euclidean &asymp; 32 &nbsp;·&nbsp; best cost via highway = <b class="shortcut">39.0</b> (vs 55 via arterial). Highway wins clean.<br>
+  <b>Admissibility:</b> every edge weight &ge; Euclidean distance between its endpoints, so Euclidean-to-goal stays a valid heuristic.<br>
+  <b>Phase 4 preview:</b> a live-traffic feed will overlay 4 edge updates on top of this baseline. Preprocessing (Phase 2) will NOT be redone — only edge weights change.
+</div>
+
+<!-- ================================================================= -->
+<!-- PHASE 2 — AFTER CONTRACTION                                       -->
+<!-- ================================================================= -->
+<p class="phase-title">Phase 2 — After preprocessing: 18 nodes contracted, 18 shortcuts added <span class="phase-sub">contraction now touches all 3 levels — including one local chain</span></p>
+
+<svg width="920" height="430" viewBox="0 0 920 430" xmlns="http://www.w3.org/2000/svg">
+  <rect width="920" height="430" fill="#ffffff" rx="4"/>
+
+  <defs>
+    <pattern id="hatch" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <rect width="6" height="6" fill="#fafaf8"/>
+      <line x1="0" y1="0" x2="0" y2="6" stroke="#bbb" stroke-width="1.2"/>
+    </pattern>
+  </defs>
+
+  <!-- band guides -->
+  <g stroke="#ececea" stroke-width="1">
+    <line x1="30" y1="370" x2="890" y2="370"/>
+    <line x1="30" y1="260" x2="890" y2="260"/>
+    <line x1="30" y1="150" x2="890" y2="150"/>
+  </g>
+  <g fill="#999" font-size="9" text-anchor="start">
+    <text x="894" y="154">level 2</text>
+    <text x="894" y="264">level 1</text>
+    <text x="894" y="374">level 0</text>
+  </g>
+
+  <!-- Superseded highway (faded) -->
+  <g stroke="#dc2626" stroke-width="1.5" stroke-linecap="round" opacity="0.18" stroke-dasharray="2,3">
+    <line x1="108" y1="150" x2="180" y2="150"/><line x1="180" y1="150" x2="252" y2="150"/>
+    <line x1="252" y1="150" x2="324" y2="150"/><line x1="324" y1="150" x2="396" y2="150"/>
+    <line x1="396" y1="150" x2="468" y2="150"/><line x1="468" y1="150" x2="540" y2="150"/>
+    <line x1="540" y1="150" x2="612" y2="150"/><line x1="612" y1="150" x2="684" y2="150"/>
+    <line x1="684" y1="150" x2="756" y2="150"/><line x1="756" y1="150" x2="828" y2="150"/>
+  </g>
+  <!-- Superseded arterial (faded) -->
+  <g stroke="#b45309" stroke-width="1.5" stroke-linecap="round" opacity="0.18" stroke-dasharray="2,3">
+    <line x1="108" y1="260" x2="180" y2="260"/><line x1="180" y1="260" x2="252" y2="260"/>
+    <line x1="252" y1="260" x2="324" y2="260"/><line x1="324" y1="260" x2="396" y2="260"/>
+    <line x1="396" y1="260" x2="468" y2="260"/><line x1="468" y1="260" x2="540" y2="260"/>
+    <line x1="540" y1="260" x2="612" y2="260"/><line x1="612" y1="260" x2="684" y2="260"/>
+    <line x1="684" y1="260" x2="756" y2="260"/><line x1="756" y1="260" x2="828" y2="260"/>
+  </g>
+  <!-- Superseded local edges (L5-L13, L13-L12 — faded) -->
+  <g stroke="#2563eb" stroke-width="1.3" stroke-linecap="round" opacity="0.2" stroke-dasharray="2,3">
+    <line x1="468" y1="315" x2="468" y2="205"/>
+    <line x1="468" y1="205" x2="468" y2="95"/>
+  </g>
+
+  <!-- Live ramps + local edges that stay active -->
+  <g stroke="#7c3aed" stroke-width="1.4" stroke-dasharray="4,3" stroke-linecap="round" opacity="0.7">
+    <line x1="108" y1="260" x2="108" y2="150"/>
+    <line x1="828" y1="260" x2="828" y2="150"/>
+  </g>
+  <g stroke="#2563eb" stroke-width="1.6" stroke-linecap="round" opacity="0.7">
+    <line x1="84" y1="370" x2="108" y2="315"/>
+    <line x1="108" y1="315" x2="132" y2="370"/>
+    <line x1="84" y1="370" x2="60" y2="315"/>
+    <line x1="84" y1="370" x2="84" y2="205"/>
+    <line x1="444" y1="370" x2="468" y2="315"/>
+    <line x1="468" y1="315" x2="492" y2="370"/>
+    <line x1="804" y1="370" x2="828" y2="315"/>
+    <line x1="828" y1="315" x2="852" y2="370"/>
+    <line x1="852" y1="370" x2="852" y2="205"/>
+  </g>
+  <g stroke="#94a3b8" stroke-width="1" stroke-dasharray="3,2" stroke-linecap="round" opacity="0.55">
+    <line x1="84" y1="370" x2="108" y2="260"/>
+    <line x1="108" y1="315" x2="108" y2="260"/>
+    <line x1="132" y1="370" x2="108" y2="260"/>
+    <line x1="84" y1="205" x2="108" y2="260"/>
+    <line x1="444" y1="370" x2="468" y2="260"/>
+    <line x1="468" y1="315" x2="468" y2="260"/>
+    <line x1="492" y1="370" x2="468" y2="260"/>
+    <line x1="468" y1="95" x2="468" y2="260"/>
+    <line x1="804" y1="370" x2="828" y2="260"/>
+    <line x1="828" y1="315" x2="828" y2="260"/>
+    <line x1="852" y1="370" x2="828" y2="260"/>
+    <line x1="852" y1="205" x2="828" y2="260"/>
+    <line x1="828" y1="95" x2="828" y2="260"/>
+  </g>
+
+  <!-- =========== SHORTCUT ARCS (the live long-distance edges) =========== -->
+  <g stroke="#2d7d46" stroke-width="3" stroke-linecap="round" stroke-dasharray="8,4" fill="none">
+    <!-- H1 ══36══ H11 (highway span, arched up) -->
+    <path d="M 108 138 Q 468 75 828 138"/>
+    <!-- A1 ══26══ A6 (arterial) -->
+    <path d="M 108 248 Q 288 215 468 248"/>
+    <!-- A6 ══26══ A11 (arterial) -->
+    <path d="M 468 248 Q 648 215 828 248"/>
+    <!-- L5 ══5══ L12 (local chain!) — arched right around L13 -->
+    <path d="M 478 308 Q 525 205 478 103"/>
+  </g>
+  <g font-size="11" fill="#2d7d46" text-anchor="middle" font-weight="700">
+    <text x="468" y="55">H1 ══30══ H11   (9 highway contractions; 10 edges × 3.0 = 30.0 free-flow)</text>
+    <text x="288" y="225">A1 ══25══ A6</text>
+    <text x="648" y="225">A6 ══25══ A11</text>
+  </g>
+  <g font-size="9" fill="#2d7d46" text-anchor="start" font-weight="700">
+    <text x="540" y="205">L5 ══5══ L12</text>
+    <text x="540" y="218">(local chain!)</text>
+  </g>
+
+  <!-- =========== HIGHWAY NODES — H2..H10 hatched =========== -->
+  <g>
+    <circle cx="108" cy="150" r="12" fill="#dc2626" stroke="#fff" stroke-width="2"/>
+    <text x="108" y="153" text-anchor="middle" fill="#fff" font-size="9" font-weight="700">H1</text>
+    <circle cx="180" cy="150" r="9" fill="url(#hatch)" stroke="#888" stroke-width="1" stroke-dasharray="3,2"/>
+    <text x="180" y="153" text-anchor="middle" fill="#666" font-size="8" font-weight="700">H2</text>
+    <circle cx="252" cy="150" r="9" fill="url(#hatch)" stroke="#888" stroke-width="1" stroke-dasharray="3,2"/>
+    <text x="252" y="153" text-anchor="middle" fill="#666" font-size="8" font-weight="700">H3</text>
+    <circle cx="324" cy="150" r="9" fill="url(#hatch)" stroke="#888" stroke-width="1" stroke-dasharray="3,2"/>
+    <text x="324" y="153" text-anchor="middle" fill="#666" font-size="8" font-weight="700">H4</text>
+    <circle cx="396" cy="150" r="9" fill="url(#hatch)" stroke="#888" stroke-width="1" stroke-dasharray="3,2"/>
+    <text x="396" y="153" text-anchor="middle" fill="#666" font-size="8" font-weight="700">H5</text>
+    <circle cx="468" cy="150" r="9" fill="url(#hatch)" stroke="#888" stroke-width="1" stroke-dasharray="3,2"/>
+    <text x="468" y="153" text-anchor="middle" fill="#666" font-size="8" font-weight="700">H6</text>
+    <circle cx="540" cy="150" r="9" fill="url(#hatch)" stroke="#888" stroke-width="1" stroke-dasharray="3,2"/>
+    <text x="540" y="153" text-anchor="middle" fill="#666" font-size="8" font-weight="700">H7</text>
+    <circle cx="612" cy="150" r="9" fill="url(#hatch)" stroke="#888" stroke-width="1" stroke-dasharray="3,2"/>
+    <text x="612" y="153" text-anchor="middle" fill="#666" font-size="8" font-weight="700">H8</text>
+    <circle cx="684" cy="150" r="9" fill="url(#hatch)" stroke="#888" stroke-width="1" stroke-dasharray="3,2"/>
+    <text x="684" y="153" text-anchor="middle" fill="#666" font-size="8" font-weight="700">H9</text>
+    <circle cx="756" cy="150" r="9" fill="url(#hatch)" stroke="#888" stroke-width="1" stroke-dasharray="3,2"/>
+    <text x="756" y="153" text-anchor="middle" fill="#666" font-size="7" font-weight="700">H10</text>
+    <circle cx="828" cy="150" r="12" fill="#dc2626" stroke="#fff" stroke-width="2"/>
+    <text x="828" y="153" text-anchor="middle" fill="#fff" font-size="8" font-weight="700">H11</text>
+  </g>
+
+  <!-- =========== ARTERIAL NODES — A2..A5, A7..A10 hatched =========== -->
+  <g>
+    <circle cx="108" cy="260" r="12" fill="#b45309" stroke="#fff" stroke-width="2"/>
+    <text x="108" y="263" text-anchor="middle" fill="#fff" font-size="9" font-weight="700">A1</text>
+    <circle cx="180" cy="260" r="9" fill="url(#hatch)" stroke="#888" stroke-width="1" stroke-dasharray="3,2"/>
+    <text x="180" y="263" text-anchor="middle" fill="#666" font-size="8" font-weight="700">A2</text>
+    <circle cx="252" cy="260" r="9" fill="url(#hatch)" stroke="#888" stroke-width="1" stroke-dasharray="3,2"/>
+    <text x="252" y="263" text-anchor="middle" fill="#666" font-size="8" font-weight="700">A3</text>
+    <circle cx="324" cy="260" r="9" fill="url(#hatch)" stroke="#888" stroke-width="1" stroke-dasharray="3,2"/>
+    <text x="324" y="263" text-anchor="middle" fill="#666" font-size="8" font-weight="700">A4</text>
+    <circle cx="396" cy="260" r="9" fill="url(#hatch)" stroke="#888" stroke-width="1" stroke-dasharray="3,2"/>
+    <text x="396" y="263" text-anchor="middle" fill="#666" font-size="8" font-weight="700">A5</text>
+    <circle cx="468" cy="260" r="12" fill="#b45309" stroke="#fff" stroke-width="2"/>
+    <text x="468" y="263" text-anchor="middle" fill="#fff" font-size="9" font-weight="700">A6</text>
+    <circle cx="540" cy="260" r="9" fill="url(#hatch)" stroke="#888" stroke-width="1" stroke-dasharray="3,2"/>
+    <text x="540" y="263" text-anchor="middle" fill="#666" font-size="8" font-weight="700">A7</text>
+    <circle cx="612" cy="260" r="9" fill="url(#hatch)" stroke="#888" stroke-width="1" stroke-dasharray="3,2"/>
+    <text x="612" y="263" text-anchor="middle" fill="#666" font-size="8" font-weight="700">A8</text>
+    <circle cx="684" cy="260" r="9" fill="url(#hatch)" stroke="#888" stroke-width="1" stroke-dasharray="3,2"/>
+    <text x="684" y="263" text-anchor="middle" fill="#666" font-size="8" font-weight="700">A9</text>
+    <circle cx="756" cy="260" r="9" fill="url(#hatch)" stroke="#888" stroke-width="1" stroke-dasharray="3,2"/>
+    <text x="756" y="263" text-anchor="middle" fill="#666" font-size="7" font-weight="700">A10</text>
+    <circle cx="828" cy="260" r="12" fill="#b45309" stroke="#fff" stroke-width="2"/>
+    <text x="828" y="263" text-anchor="middle" fill="#fff" font-size="8" font-weight="700">A11</text>
+  </g>
+
+  <!-- =========== LOCAL NODES — L13 hatched (contracted!) =========== -->
+  <g>
+    <circle cx="84" cy="370" r="13" fill="#2d7d46" stroke="#fff" stroke-width="2"/>
+    <text x="84" y="373" text-anchor="middle" fill="#fff" font-size="10" font-weight="700">L1</text>
+    <circle cx="108" cy="315" r="11" fill="#2563eb" stroke="#fff" stroke-width="1.5"/>
+    <text x="108" y="318" text-anchor="middle" fill="#fff" font-size="9" font-weight="700">L2</text>
+    <circle cx="132" cy="370" r="11" fill="#2563eb" stroke="#fff" stroke-width="1.5"/>
+    <text x="132" y="373" text-anchor="middle" fill="#fff" font-size="9" font-weight="700">L3</text>
+    <circle cx="84" cy="205" r="11" fill="#2563eb" stroke="#fff" stroke-width="1.5"/>
+    <text x="84" y="208" text-anchor="middle" fill="#fff" font-size="8" font-weight="700">L10</text>
+    <circle cx="60" cy="315" r="11" fill="#2563eb" stroke="#fff" stroke-width="1.5"/>
+    <text x="60" y="318" text-anchor="middle" fill="#fff" font-size="8" font-weight="700">L11</text>
+
+    <circle cx="444" cy="370" r="11" fill="#2563eb" stroke="#fff" stroke-width="1.5"/>
+    <text x="444" y="373" text-anchor="middle" fill="#fff" font-size="9" font-weight="700">L4</text>
+    <circle cx="468" cy="315" r="11" fill="#2563eb" stroke="#fff" stroke-width="1.5"/>
+    <text x="468" y="318" text-anchor="middle" fill="#fff" font-size="9" font-weight="700">L5</text>
+    <circle cx="492" cy="370" r="11" fill="#2563eb" stroke="#fff" stroke-width="1.5"/>
+    <text x="492" y="373" text-anchor="middle" fill="#fff" font-size="9" font-weight="700">L6</text>
+    <!-- L13 HATCHED — this is the local contraction -->
+    <circle cx="468" cy="205" r="9" fill="url(#hatch)" stroke="#2d7d46" stroke-width="1.5" stroke-dasharray="3,2"/>
+    <text x="468" y="208" text-anchor="middle" fill="#666" font-size="7" font-weight="700">L13</text>
+    <circle cx="468" cy="95" r="11" fill="#2563eb" stroke="#fff" stroke-width="1.5"/>
+    <text x="468" y="98" text-anchor="middle" fill="#fff" font-size="8" font-weight="700">L12</text>
+
+    <circle cx="804" cy="370" r="11" fill="#2563eb" stroke="#fff" stroke-width="1.5"/>
+    <text x="804" y="373" text-anchor="middle" fill="#fff" font-size="9" font-weight="700">L7</text>
+    <circle cx="828" cy="315" r="11" fill="#2563eb" stroke="#fff" stroke-width="1.5"/>
+    <text x="828" y="318" text-anchor="middle" fill="#fff" font-size="9" font-weight="700">L8</text>
+    <circle cx="852" cy="370" r="13" fill="#92400e" stroke="#fff" stroke-width="2"/>
+    <text x="852" y="373" text-anchor="middle" fill="#fff" font-size="10" font-weight="700">L9</text>
+    <circle cx="852" cy="205" r="11" fill="#2563eb" stroke="#fff" stroke-width="1.5"/>
+    <text x="852" y="208" text-anchor="middle" fill="#fff" font-size="8" font-weight="700">L14</text>
+    <circle cx="828" cy="95" r="11" fill="#2563eb" stroke="#fff" stroke-width="1.5"/>
+    <text x="828" y="98" text-anchor="middle" fill="#fff" font-size="8" font-weight="700">L15</text>
+  </g>
+</svg>
+
+<div class="info">
+  <div class="title">18 contractions across ALL 3 levels — nothing deleted</div>
+  <table>
+    <tr><th>Level</th><th>Contracted</th><th>Kept</th><th>Reason kept nodes stay</th></tr>
+    <tr><td class="highway">Highway</td><td>H2..H10 (<b>9</b>)</td><td>H1, H11</td><td>ramp to A1 / A11 (transition edges)</td></tr>
+    <tr><td class="arterial">Arterial</td><td>A2..A5, A7..A10 (<b>8</b>)</td><td>A1, A6, A11</td><td>local connectors + ramps — can't contract</td></tr>
+    <tr><td class="local">Local</td><td><b>L13</b> (1)</td><td>all other locals</td><td>degree&ne;2 OR has transition edge to arterial</td></tr>
+  </table>
+  <br>
+  <b>Terminal shortcuts built by preprocessing (the live long-distance edges):</b><br>
+  <span class="shortcut">• H1 ══30══ H11</span>&nbsp;&nbsp;Via = H2→H3→H4→H5→H6→H7→H8→H9→H10 — 10 highway edges × 3.0 = <b>30.0</b><br>
+  <span class="shortcut">• A1 ══25══ A6</span>&nbsp;&nbsp;Via = A2→A3→A4→A5 — 5 arterial edges × 5.0 = <b>25.0</b><br>
+  <span class="shortcut">• A6 ══25══ A11</span>&nbsp;&nbsp;Via = A7→A8→A9→A10 — 5 arterial edges × 5.0 = <b>25.0</b><br>
+  <span class="shortcut">• L5 ══5══ L12</span>&nbsp;&nbsp;Via = L13 — weights 2.5+2.5. Proves the CH rule isn't highway-specific: any
+  "2 neighbors + 0 transitions" node at any level collapses the same way.<br>
+  <b>Key property:</b> shortcut weights are baked from the current weights. When Phase 4's live-traffic feed
+  updates H4-H5 and H5-H6 from 3.0 → 15.0, the H1══30══H11 shortcut's stored cost becomes <b>54.0</b> —
+  same shortcut, same graph structure, new number.
+</div>
+
+<!-- ================================================================= -->
+<!-- PHASE 3 — BIDIRECTIONAL SEARCH FINDS THE ROUTE                    -->
+<!-- ================================================================= -->
+<p class="phase-title">Phase 3 — Bi-A* + CH path on the free-flow graph <span class="phase-sub">5-hop contracted path; one shortcut hop hides all 10 highway edges</span></p>
+
+<svg width="920" height="430" viewBox="0 0 920 430" xmlns="http://www.w3.org/2000/svg">
+  <rect width="920" height="430" fill="#ffffff" rx="4"/>
+
+  <defs>
+    <pattern id="hatch2" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <rect width="6" height="6" fill="#fafaf8"/>
+      <line x1="0" y1="0" x2="0" y2="6" stroke="#bbb" stroke-width="1.2"/>
+    </pattern>
+  </defs>
+
+  <g stroke="#ececea" stroke-width="1">
+    <line x1="30" y1="370" x2="890" y2="370"/>
+    <line x1="30" y1="260" x2="890" y2="260"/>
+    <line x1="30" y1="150" x2="890" y2="150"/>
+  </g>
+
+  <!-- All non-path edges faded -->
+  <g stroke="#e4e4e0" stroke-width="1" stroke-linecap="round" stroke-dasharray="2,3" opacity="0.55">
+    <line x1="108" y1="150" x2="828" y2="150"/>
+    <line x1="108" y1="260" x2="828" y2="260"/>
+  </g>
+
+  <!-- FWD segment: L1 → A1 -->
+  <g stroke="#2563eb" stroke-width="3.5" stroke-linecap="round">
+    <line x1="84" y1="370" x2="108" y2="260"/>
+  </g>
+  <!-- FWD segment: A1 → H1 -->
+  <g stroke="#2563eb" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="6,3">
+    <line x1="108" y1="260" x2="108" y2="150"/>
+  </g>
+  <!-- MEETING SHORTCUT: H1 ══36══ H11 -->
+  <g stroke="#2d7d46" stroke-width="4" stroke-linecap="round" stroke-dasharray="10,5" fill="none">
+    <path d="M 108 138 Q 468 75 828 138"/>
+  </g>
+  <!-- BWD segment: H11 → A11 -->
+  <g stroke="#b45309" stroke-width="3.5" stroke-linecap="round" stroke-dasharray="6,3">
+    <line x1="828" y1="150" x2="828" y2="260"/>
+  </g>
+  <!-- BWD segment: A11 → L9 -->
+  <g stroke="#b45309" stroke-width="3.5" stroke-linecap="round">
+    <line x1="828" y1="260" x2="852" y2="370"/>
+  </g>
+
+  <g font-size="11" fill="#2d7d46" text-anchor="middle" font-weight="700">
+    <text x="468" y="55">H1 ══30══ H11   (shortcut — 10 free-flow highway edges collapsed into one)</text>
+  </g>
+  <g font-size="10" text-anchor="middle">
+    <text x="30" y="310" fill="#2563eb" font-weight="700">FWD</text>
+    <text x="898" y="310" fill="#b45309" font-weight="700">BWD</text>
+  </g>
+
+  <!-- Active nodes -->
+  <g>
+    <circle cx="84" cy="370" r="14" fill="#2d7d46" stroke="#fff" stroke-width="2.5"/>
+    <text x="84" y="373" text-anchor="middle" fill="#fff" font-size="10" font-weight="700">L1</text>
+    <text x="84" y="400" text-anchor="middle" fill="#2d7d46" font-size="9" font-weight="600">start · g=0</text>
+
+    <circle cx="108" cy="260" r="13" fill="#b45309" stroke="#2563eb" stroke-width="3"/>
+    <text x="108" y="263" text-anchor="middle" fill="#fff" font-size="10" font-weight="700">A1</text>
+    <text x="108" y="292" text-anchor="middle" fill="#2563eb" font-size="9">FWD · g=2.5</text>
+
+    <circle cx="108" cy="150" r="13" fill="#dc2626" stroke="#2563eb" stroke-width="3"/>
+    <text x="108" y="153" text-anchor="middle" fill="#fff" font-size="10" font-weight="700">H1</text>
+    <text x="108" y="182" text-anchor="middle" fill="#2563eb" font-size="9">FWD · g=4.5</text>
+
+    <circle cx="828" cy="150" r="13" fill="#dc2626" stroke="#b45309" stroke-width="3"/>
+    <text x="828" y="153" text-anchor="middle" fill="#fff" font-size="10" font-weight="700">H11</text>
+    <text x="828" y="182" text-anchor="middle" fill="#b45309" font-size="9">BWD · g=4.5</text>
+
+    <circle cx="828" cy="260" r="13" fill="#b45309" stroke="#b45309" stroke-width="3"/>
+    <text x="828" y="263" text-anchor="middle" fill="#fff" font-size="10" font-weight="700">A11</text>
+    <text x="828" y="292" text-anchor="middle" fill="#b45309" font-size="9">BWD · g=2.5</text>
+
+    <circle cx="852" cy="370" r="14" fill="#92400e" stroke="#fff" stroke-width="2.5"/>
+    <text x="852" y="373" text-anchor="middle" fill="#fff" font-size="10" font-weight="700">L9</text>
+    <text x="852" y="400" text-anchor="middle" fill="#92400e" font-size="9" font-weight="600">goal · g=0</text>
+
+    <!-- Greyed non-visited -->
+    <g opacity="0.3">
+      <circle cx="108" cy="315" r="9" fill="#2563eb"/><text x="108" y="318" text-anchor="middle" fill="#fff" font-size="8">L2</text>
+      <circle cx="132" cy="370" r="9" fill="#2563eb"/><text x="132" y="373" text-anchor="middle" fill="#fff" font-size="8">L3</text>
+      <circle cx="84" cy="205" r="9" fill="#2563eb"/><text x="84" y="208" text-anchor="middle" fill="#fff" font-size="7">L10</text>
+      <circle cx="60" cy="315" r="9" fill="#2563eb"/><text x="60" y="318" text-anchor="middle" fill="#fff" font-size="7">L11</text>
+      <circle cx="444" cy="370" r="9" fill="#2563eb"/><text x="444" y="373" text-anchor="middle" fill="#fff" font-size="8">L4</text>
+      <circle cx="468" cy="315" r="9" fill="#2563eb"/><text x="468" y="318" text-anchor="middle" fill="#fff" font-size="8">L5</text>
+      <circle cx="492" cy="370" r="9" fill="#2563eb"/><text x="492" y="373" text-anchor="middle" fill="#fff" font-size="8">L6</text>
+      <circle cx="468" cy="205" r="7" fill="url(#hatch2)" stroke="#888" stroke-width="0.8" stroke-dasharray="3,2"/>
+      <circle cx="468" cy="95" r="9" fill="#2563eb"/><text x="468" y="98" text-anchor="middle" fill="#fff" font-size="7">L12</text>
+      <circle cx="804" cy="370" r="9" fill="#2563eb"/><text x="804" y="373" text-anchor="middle" fill="#fff" font-size="8">L7</text>
+      <circle cx="828" cy="315" r="9" fill="#2563eb"/><text x="828" y="318" text-anchor="middle" fill="#fff" font-size="8">L8</text>
+      <circle cx="852" cy="205" r="9" fill="#2563eb"/><text x="852" y="208" text-anchor="middle" fill="#fff" font-size="7">L14</text>
+      <circle cx="828" cy="95" r="9" fill="#2563eb"/><text x="828" y="98" text-anchor="middle" fill="#fff" font-size="7">L15</text>
+      <circle cx="468" cy="260" r="10" fill="#b45309"/><text x="468" y="263" text-anchor="middle" fill="#fff" font-size="8">A6</text>
+      <!-- Hatched middles -->
+      <g>
+        <circle cx="180" cy="150" r="7" fill="url(#hatch2)" stroke="#888" stroke-width="0.8" stroke-dasharray="3,2"/>
+        <circle cx="252" cy="150" r="7" fill="url(#hatch2)" stroke="#888" stroke-width="0.8" stroke-dasharray="3,2"/>
+        <circle cx="324" cy="150" r="7" fill="url(#hatch2)" stroke="#888" stroke-width="0.8" stroke-dasharray="3,2"/>
+        <circle cx="396" cy="150" r="7" fill="url(#hatch2)" stroke="#888" stroke-width="0.8" stroke-dasharray="3,2"/>
+        <circle cx="468" cy="150" r="7" fill="url(#hatch2)" stroke="#888" stroke-width="0.8" stroke-dasharray="3,2"/>
+        <circle cx="540" cy="150" r="7" fill="url(#hatch2)" stroke="#888" stroke-width="0.8" stroke-dasharray="3,2"/>
+        <circle cx="612" cy="150" r="7" fill="url(#hatch2)" stroke="#888" stroke-width="0.8" stroke-dasharray="3,2"/>
+        <circle cx="684" cy="150" r="7" fill="url(#hatch2)" stroke="#888" stroke-width="0.8" stroke-dasharray="3,2"/>
+        <circle cx="756" cy="150" r="7" fill="url(#hatch2)" stroke="#888" stroke-width="0.8" stroke-dasharray="3,2"/>
+        <circle cx="180" cy="260" r="7" fill="url(#hatch2)" stroke="#888" stroke-width="0.8" stroke-dasharray="3,2"/>
+        <circle cx="252" cy="260" r="7" fill="url(#hatch2)" stroke="#888" stroke-width="0.8" stroke-dasharray="3,2"/>
+        <circle cx="324" cy="260" r="7" fill="url(#hatch2)" stroke="#888" stroke-width="0.8" stroke-dasharray="3,2"/>
+        <circle cx="396" cy="260" r="7" fill="url(#hatch2)" stroke="#888" stroke-width="0.8" stroke-dasharray="3,2"/>
+        <circle cx="540" cy="260" r="7" fill="url(#hatch2)" stroke="#888" stroke-width="0.8" stroke-dasharray="3,2"/>
+        <circle cx="612" cy="260" r="7" fill="url(#hatch2)" stroke="#888" stroke-width="0.8" stroke-dasharray="3,2"/>
+        <circle cx="684" cy="260" r="7" fill="url(#hatch2)" stroke="#888" stroke-width="0.8" stroke-dasharray="3,2"/>
+        <circle cx="756" cy="260" r="7" fill="url(#hatch2)" stroke="#888" stroke-width="0.8" stroke-dasharray="3,2"/>
+      </g>
+    </g>
+  </g>
+</svg>
+
+<div class="info">
+  <div class="title"><span class="shortcut">Route found — one shortcut collapses the whole highway chain</span></div>
+  Contracted path: &nbsp;L1 &rarr; A1 &rarr; H1 <span class="shortcut">══30══</span> H11 &rarr; A11 &rarr; L9<br>
+  Cost: 2.5 + 2.0 + <b>30.0</b> + 2.0 + 2.5 = <b class="result">39.0</b>&nbsp;
+  (vs 55.0 if we took the arterial chain end-to-end — highway wins by 16 in free-flow)<br>
+  Expand shortcut H1══30══H11: H1 &rarr; H2 &rarr; H3 &rarr; H4 &rarr; H5 &rarr; H6 &rarr; H7 &rarr; H8 &rarr; H9 &rarr; H10 &rarr; H11<br>
+  <span class="shortcut" style="font-weight:700">Real directions: L1 &rarr; A1 &rarr; H1 &rarr; H2 &rarr; H3 &rarr; H4 &rarr; H5 &rarr; H6 &rarr; H7 &rarr; H8 &rarr; H9 &rarr; H10 &rarr; H11 &rarr; A11 &rarr; L9</span>
+</div>
+
+<div class="info">
+  <div class="title">What the weight hook enables (lead-in to Phase 4's live-traffic scenario)</div>
+  The shortcut <span class="shortcut">H1 ══30══ H11</span> is one number, but it's the sum of
+  <b>10 underlying edges</b>. Change any of those edges, the shortcut's cost changes, and the
+  optimal route can flip. Typical production use-cases that plug into the same hook:<br>
+  <table>
+    <tr><th>Use case</th><th>How it plugs in</th></tr>
+    <tr><td>Time-of-day speed profiles</td><td>swap `highwayWeights[]` at query time (rush-hour vs overnight)</td></tr>
+    <tr><td>Live-traffic overlays</td><td>multiply specific edges by a congestion factor fetched from traffic feed — <b>Phase 4 below</b></td></tr>
+    <tr><td>Vehicle type</td><td>different weight tables per profile (car / truck / bike)</td></tr>
+    <tr><td>Road closures</td><td>set an edge to +Inf — the shortcut that included it becomes invalid and CH falls back to alternate edges</td></tr>
+  </table>
+  Valhalla's real system does all four. This demo just needs weight-table hooks — the search code doesn't change.
+</div>
+
+<div class="info">
+  <div class="title">Hierarchy limits (Run 3) — Valhalla's first-/last-mile rule</div>
+  Each search only relaxes an edge at level <i>L</i> if the incoming node is within
+  <b>ExpandWithin[L]</b> Euclidean distance of its <i>home</i> endpoint
+  (start for FWD, goal for BWD):<br>
+  <table>
+    <tr><th>Level</th><th>Class</th><th>ExpandWithin</th><th>Effect on L1→L9 (Euclidean ≈ 32)</th></tr>
+    <tr><td class="local">0</td><td>local</td><td>2.5</td><td>only D1 from FWD and D11 from BWD reachable as locals; D6 cut off</td></tr>
+    <tr><td class="arterial">1</td><td>arterial</td><td>5.0</td><td>arterial near each endpoint only — A6 is too far from both</td></tr>
+    <tr><td class="highway">2</td><td>highway</td><td>∞</td><td>no limit — the highway shortcut is available end-to-end</td></tr>
+  </table>
+  Middle arterial + D6 dimmed in Phase 3 — the hierarchy rule forbids their expansion that far
+  from either endpoint, pushing the search onto the highway shortcut. At continental scale this is
+  what actually gives CH its O(√n) behaviour.
+</div>
+
+<div class="info">
+  <div class="title">Comparison on the 37-node demo graph, free-flow (L1 → L9)</div>
+  <table>
+    <tr><th>Algorithm</th><th>Nodes explored</th><th>Cost</th><th>Mechanism visible</th></tr>
+    <tr><td class="highway" style="font-weight:700">A* (baseline)</td><td>small</td><td>39.0</td><td>Euclidean heuristic tight at 37 nodes — already near-optimal</td></tr>
+    <tr><td class="arterial" style="font-weight:700">Bi-A* + CH (no limits)</td><td>small</td><td>39.0</td><td><b>18 shortcuts</b> built; path uses 1 shortcut hop hiding 10 real edges</td></tr>
+    <tr><td class="shortcut" style="font-weight:700">Bi-A* + CH + limits</td><td>small</td><td>39.0</td><td>hierarchy rule <b>cuts edges</b> at level 0/1 that unlimited-CH would have taken</td></tr>
+  </table>
+  <br>
+  All three find the same path (CH preserves optimality). On this toy graph Bi-A* looks like
+  overhead because its two open sets need scale to amortise. At <b>continental scale</b>,
+  a single H1══H11-style shortcut replaces thousands of highway edges in one relaxation,
+  and weight tables let the same preprocessed graph serve rush-hour, overnight, and live-traffic
+  queries — swap the weight vector per query. Phase 4 below demonstrates that last point.
+</div>
+
+<!-- ================================================================= -->
+<!-- PHASE 4 — LIVE-TRAFFIC OVERLAY: THE ROUTE FLIPS                   -->
+<!-- ================================================================= -->
+<p class="phase-title">Phase 4 — Live-traffic overlay <span class="phase-sub">four edges update across all 3 levels; the optimal route flips from highway to arterial (no CH rebuild)</span></p>
+
+<div class="info" style="background:#fff4e6; border-color:#f59e0b;">
+  <div class="title" style="color:#b45309;">📡 Live-traffic feed arrives — 4 edge weights updated</div>
+  <table>
+    <tr><th>Edge</th><th>Level</th><th>Before</th><th>After</th><th>Reason</th></tr>
+    <tr><td class="highway">H4 ↔ H5</td><td>Highway (L2)</td><td>3.0</td><td><span class="traffic-slow">15.0</span></td><td>🚨 multi-car accident, highway crawls</td></tr>
+    <tr><td class="highway">H5 ↔ H6</td><td>Highway (L2)</td><td>3.0</td><td><span class="traffic-slow">15.0</span></td><td>🚨 accident backup one edge further</td></tr>
+    <tr><td class="arterial">A8 ↔ A9</td><td>Arterial (L1)</td><td>5.0</td><td><span class="traffic-mild">8.0</span></td><td>🚦 downtown rush hour</td></tr>
+    <tr><td class="local">L1 ↔ A1</td><td>Local ramp</td><td>2.5</td><td><span class="traffic-mild">8.0</span></td><td>🚧 construction on L1's on-ramp street</td></tr>
+  </table>
+  <br>
+  <b>No preprocessing is redone.</b> The 18 shortcuts from Phase 2 stay exactly as they are —
+  only the numbers stored on the affected edges (and the shortcuts that include them) change:
+  <span class="shortcut">H1══30══H11</span> effectively becomes <span class="traffic-slow">54.0</span>
+  (free-flow H1-H4 + 15 + 15 + free-flow H6-H11 = 9+15+15+15 = 54).
+</div>
+
+<svg width="920" height="430" viewBox="0 0 920 430" xmlns="http://www.w3.org/2000/svg">
+  <rect width="920" height="430" fill="#ffffff" rx="4"/>
+
+  <g stroke="#ececea" stroke-width="1">
+    <line x1="30" y1="370" x2="890" y2="370"/>
+    <line x1="30" y1="260" x2="890" y2="260"/>
+    <line x1="30" y1="150" x2="890" y2="150"/>
+  </g>
+  <g fill="#999" font-size="9" text-anchor="start">
+    <text x="894" y="154">level 2 · highway</text>
+    <text x="894" y="264">level 1 · arterial</text>
+    <text x="894" y="374">level 0 · locals</text>
+  </g>
+
+  <!-- District backgrounds -->
+  <g opacity="0.22">
+    <rect x="30" y="305" width="125" height="80" fill="#e8f0ff" rx="3"/>
+    <rect x="420" y="85" width="100" height="300" fill="#e8f0ff" rx="3"/>
+    <rect x="780" y="85" width="110" height="300" fill="#e8f0ff" rx="3"/>
+  </g>
+
+  <!-- All non-path edges faded -->
+  <g stroke="#dc2626" stroke-width="2" stroke-linecap="round" opacity="0.2" stroke-dasharray="2,3">
+    <line x1="108" y1="150" x2="180" y2="150"/>
+    <line x1="180" y1="150" x2="252" y2="150"/>
+    <line x1="252" y1="150" x2="324" y2="150"/>
+    <line x1="468" y1="150" x2="540" y2="150"/>
+    <line x1="540" y1="150" x2="612" y2="150"/>
+    <line x1="612" y1="150" x2="684" y2="150"/>
+    <line x1="684" y1="150" x2="756" y2="150"/>
+    <line x1="756" y1="150" x2="828" y2="150"/>
+  </g>
+  <!-- Highway accident edges — BRIGHT RED, thick -->
+  <g stroke="#b91c1c" stroke-width="5" stroke-linecap="round" opacity="0.95">
+    <line x1="324" y1="150" x2="396" y2="150"/>
+    <line x1="396" y1="150" x2="468" y2="150"/>
+  </g>
+  <g font-size="10" text-anchor="middle" font-weight="800" class="traffic-slow">
+    <text x="360" y="140">15</text>
+    <text x="432" y="140">15</text>
+  </g>
+  <text x="396" y="120" text-anchor="middle" font-size="10" font-weight="800" fill="#b91c1c">🚨 ACCIDENT</text>
+
+  <!-- Arterial chain — faded except the chosen path (highlighted below) -->
+  <!-- All arterial edges are used, so draw all in highlighted arterial color -->
+  <g stroke="#b45309" stroke-width="4" stroke-linecap="round" opacity="0.9">
+    <line x1="108" y1="260" x2="180" y2="260"/>
+    <line x1="180" y1="260" x2="252" y2="260"/>
+    <line x1="252" y1="260" x2="324" y2="260"/>
+    <line x1="324" y1="260" x2="396" y2="260"/>
+    <line x1="396" y1="260" x2="468" y2="260"/>
+    <line x1="468" y1="260" x2="540" y2="260"/>
+    <line x1="540" y1="260" x2="612" y2="260"/>
+    <line x1="684" y1="260" x2="756" y2="260"/>
+    <line x1="756" y1="260" x2="828" y2="260"/>
+  </g>
+  <!-- A8-A9 rush-hour edge — orange, thicker -->
+  <g stroke="#c2410c" stroke-width="5" stroke-linecap="round" opacity="0.95">
+    <line x1="612" y1="260" x2="684" y2="260"/>
+  </g>
+  <g font-size="9" text-anchor="middle" font-weight="700" fill="#92400e">
+    <text x="144" y="253">5</text>
+    <text x="216" y="253">5</text>
+    <text x="288" y="253">5</text>
+    <text x="360" y="253">5</text>
+    <text x="432" y="253">5</text>
+    <text x="504" y="253">5</text>
+    <text x="576" y="253">5</text>
+    <text x="720" y="253">5</text>
+    <text x="792" y="253">5</text>
+  </g>
+  <text x="648" y="253" text-anchor="middle" font-size="10" font-weight="800" class="traffic-mild">8</text>
+  <text x="648" y="238" text-anchor="middle" font-size="9" font-weight="700" fill="#c2410c">🚦 rush</text>
+
+  <!-- A1↔H1 ramp — faded (not used) -->
+  <g stroke="#7c3aed" stroke-width="1.2" stroke-dasharray="3,3" stroke-linecap="round" opacity="0.3">
+    <line x1="108" y1="260" x2="108" y2="150"/>
+  </g>
+  <!-- A11↔H11 ramp — faded (not used) -->
+  <g stroke="#7c3aed" stroke-width="1.2" stroke-dasharray="3,3" stroke-linecap="round" opacity="0.3">
+    <line x1="828" y1="260" x2="828" y2="150"/>
+  </g>
+
+  <!-- L1 ↔ A1 direct ramp — CONSTRUCTION, dashed orange -->
+  <g stroke="#c2410c" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="5,4" opacity="0.9">
+    <line x1="84" y1="370" x2="108" y2="260"/>
+  </g>
+  <text x="75" y="320" text-anchor="end" font-size="9" font-weight="800" fill="#c2410c">🚧 8.0</text>
+
+  <!-- Chosen route entry: L1 → L2 → A1 (the detour) -->
+  <g stroke="#2d7d46" stroke-width="4" stroke-linecap="round">
+    <line x1="84" y1="370" x2="108" y2="315"/>   <!-- L1-L2 -->
+    <line x1="108" y1="315" x2="108" y2="260"/>  <!-- L2-A1 -->
+  </g>
+  <!-- Chosen route exit: A11 → L9 -->
+  <g stroke="#2d7d46" stroke-width="4" stroke-linecap="round">
+    <line x1="828" y1="260" x2="852" y2="370"/>
+  </g>
+
+  <!-- Route label -->
+  <text x="460" y="200" text-anchor="middle" font-size="12" font-weight="700" fill="#b45309">
+    ↓ optimal route now runs along the ARTERIAL (highway is blocked) ↓
+  </text>
+
+  <!-- Nodes — highlight route nodes, fade others -->
+  <g>
+    <!-- Highway nodes — faded -->
+    <g opacity="0.35">
+      <circle cx="108" cy="150" r="11" fill="#dc2626"/><text x="108" y="153" text-anchor="middle" fill="#fff" font-size="8" font-weight="700">H1</text>
+      <circle cx="180" cy="150" r="9" fill="#dc2626"/><text x="180" y="153" text-anchor="middle" fill="#fff" font-size="8">H2</text>
+      <circle cx="252" cy="150" r="9" fill="#dc2626"/><text x="252" y="153" text-anchor="middle" fill="#fff" font-size="8">H3</text>
+      <circle cx="324" cy="150" r="9" fill="#dc2626"/><text x="324" y="153" text-anchor="middle" fill="#fff" font-size="8">H4</text>
+      <circle cx="396" cy="150" r="9" fill="#dc2626"/><text x="396" y="153" text-anchor="middle" fill="#fff" font-size="8">H5</text>
+      <circle cx="468" cy="150" r="9" fill="#dc2626"/><text x="468" y="153" text-anchor="middle" fill="#fff" font-size="8">H6</text>
+      <circle cx="540" cy="150" r="9" fill="#dc2626"/><text x="540" y="153" text-anchor="middle" fill="#fff" font-size="8">H7</text>
+      <circle cx="612" cy="150" r="9" fill="#dc2626"/><text x="612" y="153" text-anchor="middle" fill="#fff" font-size="8">H8</text>
+      <circle cx="684" cy="150" r="9" fill="#dc2626"/><text x="684" y="153" text-anchor="middle" fill="#fff" font-size="8">H9</text>
+      <circle cx="756" cy="150" r="9" fill="#dc2626"/><text x="756" y="153" text-anchor="middle" fill="#fff" font-size="7">H10</text>
+      <circle cx="828" cy="150" r="11" fill="#dc2626"/><text x="828" y="153" text-anchor="middle" fill="#fff" font-size="8">H11</text>
+    </g>
+
+    <!-- Arterial nodes — all used, full opacity -->
+    <g>
+      <circle cx="108" cy="260" r="12" fill="#b45309" stroke="#fff" stroke-width="2"/>
+      <text x="108" y="263" text-anchor="middle" fill="#fff" font-size="9" font-weight="700">A1</text>
+      <circle cx="180" cy="260" r="10" fill="#b45309" stroke="#fff" stroke-width="1.5"/>
+      <text x="180" y="263" text-anchor="middle" fill="#fff" font-size="8" font-weight="700">A2</text>
+      <circle cx="252" cy="260" r="10" fill="#b45309" stroke="#fff" stroke-width="1.5"/>
+      <text x="252" y="263" text-anchor="middle" fill="#fff" font-size="8" font-weight="700">A3</text>
+      <circle cx="324" cy="260" r="10" fill="#b45309" stroke="#fff" stroke-width="1.5"/>
+      <text x="324" y="263" text-anchor="middle" fill="#fff" font-size="8" font-weight="700">A4</text>
+      <circle cx="396" cy="260" r="10" fill="#b45309" stroke="#fff" stroke-width="1.5"/>
+      <text x="396" y="263" text-anchor="middle" fill="#fff" font-size="8" font-weight="700">A5</text>
+      <circle cx="468" cy="260" r="12" fill="#b45309" stroke="#fff" stroke-width="2"/>
+      <text x="468" y="263" text-anchor="middle" fill="#fff" font-size="9" font-weight="700">A6</text>
+      <circle cx="540" cy="260" r="10" fill="#b45309" stroke="#fff" stroke-width="1.5"/>
+      <text x="540" y="263" text-anchor="middle" fill="#fff" font-size="8" font-weight="700">A7</text>
+      <circle cx="612" cy="260" r="10" fill="#b45309" stroke="#fff" stroke-width="1.5"/>
+      <text x="612" y="263" text-anchor="middle" fill="#fff" font-size="8" font-weight="700">A8</text>
+      <circle cx="684" cy="260" r="10" fill="#b45309" stroke="#fff" stroke-width="1.5"/>
+      <text x="684" y="263" text-anchor="middle" fill="#fff" font-size="8" font-weight="700">A9</text>
+      <circle cx="756" cy="260" r="10" fill="#b45309" stroke="#fff" stroke-width="1.5"/>
+      <text x="756" y="263" text-anchor="middle" fill="#fff" font-size="7" font-weight="700">A10</text>
+      <circle cx="828" cy="260" r="12" fill="#b45309" stroke="#fff" stroke-width="2"/>
+      <text x="828" y="263" text-anchor="middle" fill="#fff" font-size="8" font-weight="700">A11</text>
+    </g>
+
+    <!-- Local nodes: L1 (start), L2 (detour!), L9 (goal) — highlighted; rest faded -->
+    <circle cx="84" cy="370" r="14" fill="#2d7d46" stroke="#fff" stroke-width="2.5"/>
+    <text x="84" y="373" text-anchor="middle" fill="#fff" font-size="10" font-weight="700">L1</text>
+    <text x="84" y="395" text-anchor="middle" fill="#2d7d46" font-size="9" font-weight="700">start</text>
+
+    <circle cx="108" cy="315" r="13" fill="#2d7d46" stroke="#fff" stroke-width="2.5"/>
+    <text x="108" y="318" text-anchor="middle" fill="#fff" font-size="10" font-weight="700">L2</text>
+    <text x="108" y="295" text-anchor="middle" fill="#2d7d46" font-size="9" font-weight="700">detour!</text>
+
+    <circle cx="852" cy="370" r="14" fill="#92400e" stroke="#fff" stroke-width="2.5"/>
+    <text x="852" y="373" text-anchor="middle" fill="#fff" font-size="10" font-weight="700">L9</text>
+    <text x="852" y="395" text-anchor="middle" fill="#92400e" font-size="9" font-weight="700">goal</text>
+
+    <g opacity="0.35">
+      <circle cx="132" cy="370" r="9" fill="#2563eb"/><text x="132" y="373" text-anchor="middle" fill="#fff" font-size="8">L3</text>
+      <circle cx="84" cy="205" r="9" fill="#2563eb"/><text x="84" y="208" text-anchor="middle" fill="#fff" font-size="7">L10</text>
+      <circle cx="60" cy="315" r="9" fill="#2563eb"/><text x="60" y="318" text-anchor="middle" fill="#fff" font-size="7">L11</text>
+      <circle cx="444" cy="370" r="9" fill="#2563eb"/><text x="444" y="373" text-anchor="middle" fill="#fff" font-size="8">L4</text>
+      <circle cx="468" cy="315" r="9" fill="#2563eb"/><text x="468" y="318" text-anchor="middle" fill="#fff" font-size="8">L5</text>
+      <circle cx="492" cy="370" r="9" fill="#2563eb"/><text x="492" y="373" text-anchor="middle" fill="#fff" font-size="8">L6</text>
+      <circle cx="468" cy="95" r="9" fill="#2563eb"/><text x="468" y="98" text-anchor="middle" fill="#fff" font-size="7">L12</text>
+      <circle cx="804" cy="370" r="9" fill="#2563eb"/><text x="804" y="373" text-anchor="middle" fill="#fff" font-size="8">L7</text>
+      <circle cx="828" cy="315" r="9" fill="#2563eb"/><text x="828" y="318" text-anchor="middle" fill="#fff" font-size="8">L8</text>
+      <circle cx="852" cy="205" r="9" fill="#2563eb"/><text x="852" y="208" text-anchor="middle" fill="#fff" font-size="7">L14</text>
+      <circle cx="828" cy="95" r="9" fill="#2563eb"/><text x="828" y="98" text-anchor="middle" fill="#fff" font-size="7">L15</text>
+    </g>
+  </g>
+</svg>
+
+<div class="info">
+  <div class="title"><span class="shortcut">Before / After — the route flips in TWO places</span></div>
+  <table>
+    <tr><th>Scenario</th><th>Route</th><th>Cost</th></tr>
+    <tr>
+      <td style="white-space:nowrap;"><b>free-flow</b></td>
+      <td>L1 &rarr; A1 &rarr; H1 <span class="shortcut">══30══</span> H11 &rarr; A11 &rarr; L9</td>
+      <td><b>39.0</b></td>
+    </tr>
+    <tr>
+      <td style="white-space:nowrap;"><b>+ live traffic</b></td>
+      <td>L1 &rarr; <b class="shortcut">L2</b> &rarr; A1 &rarr; A2 &rarr; A3 &rarr; A4 &rarr; A5 &rarr; A6 &rarr; A7 &rarr; A8 &rarr; A9 &rarr; A10 &rarr; A11 &rarr; L9</td>
+      <td><b class="result">58.5</b></td>
+    </tr>
+  </table>
+  <br>
+  <b>Cost breakdown of the traffic route:</b> 1.5 (L1&ndash;L2) + 1.5 (L2&ndash;A1) +
+  5×7 (A1..A8 free) + <span class="traffic-mild">8</span> (A8&ndash;A9 rush) +
+  5×2 (A9..A11) + 2.5 (A11&ndash;L9) = <b class="result">58.5</b>.<br>
+  Same cost via highway would be 3 (L1&ndash;L2&ndash;A1 avoids jammed ramp) + 2 (A1&ndash;H1) +
+  9 (H1..H4) + <span class="traffic-slow">15+15</span> (accident) + 15 (H6..H11) + 2 (H11&ndash;A11) + 2.5 = 63.5.
+  Arterial wins by 5.0 — the route flipped.
+</div>
+
+<div class="info">
+  <div class="title">★ Teaching points for the classroom</div>
+  <ul style="margin-left:20px; line-height:1.9;">
+    <li><b>The graph didn't change.</b> The 18 shortcuts from Phase 2 are still there. Only four edge weights were updated.</li>
+    <li><b>The route flips in two independent places:</b>
+      <ul style="margin-left:18px;">
+        <li>Local entry — direct L1&rarr;A1 (now jammed at 8.0) is replaced by L1&rarr;L2&rarr;A1 (3.0 via detour).</li>
+        <li>Backbone — highway H1══30══H11 (now effectively 54 because of the accident) is replaced by the full arterial chain.</li>
+      </ul>
+    </li>
+    <li><b>Live traffic hits all 3 levels</b> (L, A, H) on purpose — so every hierarchy layer contributes to the new optimum.</li>
+    <li><b>This is how production routers work.</b> Feed arrives → overlay updates weights → next search picks the new optimum. No CH rebuild, no graph surgery.</li>
+    <li>⚠️ A subtle note: CH + hierarchy limits (Run 3 in the Go demo) can't fully reroute here, because the arterial chain lives outside ExpandWithin[1]=5.0 from L1. At continental scale, those radii are tuned with traffic considerations in mind.</li>
+  </ul>
+</div>
+
+</body>
+</html>

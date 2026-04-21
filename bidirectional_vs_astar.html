@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #1a1a2e;
+    color: #c4c9d4;
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 40px 20px;
+    min-height: 100vh;
+  }
+  h1 {
+    color: #e2e8f0;
+    font-size: 28px;
+    font-weight: 700;
+    margin-bottom: 8px;
+    letter-spacing: -0.5px;
+  }
+  .subtitle {
+    color: #7a8ba8;
+    font-size: 14px;
+    margin-bottom: 30px;
+  }
+  .formula-bar {
+    display: flex;
+    gap: 40px;
+    margin-bottom: 36px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .formula {
+    padding: 14px 24px;
+    border-radius: 10px;
+    font-size: 16px;
+    text-align: center;
+  }
+  .formula-astar {
+    background: rgba(233, 69, 96, 0.12);
+    border: 1.5px solid rgba(233, 69, 96, 0.3);
+    color: #e94560;
+  }
+  .formula-bi {
+    background: rgba(14, 165, 233, 0.12);
+    border: 1.5px solid rgba(14, 165, 233, 0.3);
+    color: #0ea5e9;
+  }
+  .formula .label { font-size: 12px; color: #7a8ba8; display: block; margin-bottom: 4px; }
+  .formula .math { font-size: 20px; font-weight: bold; }
+
+  .section-title {
+    color: #a0aec0;
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    margin: 30px 0 16px;
+  }
+
+  svg { display: block; }
+
+  .grid-container {
+    display: flex;
+    gap: 50px;
+    margin-top: 10px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .grid-panel {
+    text-align: center;
+  }
+  .grid-label {
+    font-size: 15px;
+    font-weight: bold;
+    margin-bottom: 8px;
+  }
+  .grid-label.astar { color: #e94560; }
+  .grid-label.bi { color: #0ea5e9; }
+  .grid-count {
+    margin-top: 8px;
+    font-size: 13px;
+    color: #7a8ba8;
+  }
+  .grid-count strong { color: #e2e8f0; font-size: 16px; }
+
+  .stats {
+    margin-top: 36px;
+    border: 1px solid #2a2a4a;
+    border-radius: 10px;
+    overflow: hidden;
+    width: 100%;
+    max-width: 640px;
+  }
+  .stats table { width: 100%; border-collapse: collapse; }
+  .stats th {
+    background: #16213e;
+    color: #7a8ba8;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    padding: 10px 16px;
+    text-align: left;
+  }
+  .stats td {
+    padding: 10px 16px;
+    border-top: 1px solid #2a2a4a;
+    font-size: 14px;
+  }
+  .stats tr td:first-child { color: #a0aec0; }
+  .stats .val-astar { color: #e94560; font-weight: bold; }
+  .stats .val-bi { color: #0ea5e9; font-weight: bold; }
+  .stats .val-save { color: #10b981; font-weight: bold; }
+
+  .insight {
+    margin-top: 24px;
+    padding: 16px 24px;
+    background: rgba(16, 185, 129, 0.08);
+    border: 1px solid rgba(16, 185, 129, 0.25);
+    border-radius: 10px;
+    max-width: 640px;
+    font-size: 13px;
+    color: #7a8ba8;
+    line-height: 1.6;
+  }
+  .insight strong { color: #10b981; }
+
+  .legend {
+    display: flex;
+    gap: 24px;
+    margin-top: 14px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    color: #7a8ba8;
+  }
+  .legend-swatch {
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+  }
+</style>
+</head>
+<body>
+
+<h1>Why Bidirectional A* Wins</h1>
+<p class="subtitle">Search area comparison: one big circle vs two small circles</p>
+
+<div class="formula-bar">
+  <div class="formula formula-astar">
+    <span class="label">Standard A*</span>
+    <span class="math">Area = pi x r^2</span>
+  </div>
+  <div class="formula formula-bi">
+    <span class="label">Bidirectional A*</span>
+    <span class="math">Area = 2 x pi x (r/2)^2 = pi x r^2 / 2</span>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════ -->
+<!-- Section 1: Overlaid Circle Diagram                 -->
+<!-- ═══════════════════════════════════════════════════ -->
+<div class="section-title">Overlaid Search Areas</div>
+
+<svg width="660" height="340" viewBox="0 0 660 340">
+  <defs>
+    <!-- A* big circle: red, low opacity -->
+    <radialGradient id="gAstar" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#e94560" stop-opacity="0.25"/>
+      <stop offset="85%" stop-color="#e94560" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="#e94560" stop-opacity="0"/>
+    </radialGradient>
+    <!-- FWD small circle: blue -->
+    <radialGradient id="gFwd" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#0ea5e9" stop-opacity="0.30"/>
+      <stop offset="85%" stop-color="#0ea5e9" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#0ea5e9" stop-opacity="0"/>
+    </radialGradient>
+    <!-- BWD small circle: blue -->
+    <radialGradient id="gBwd" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#0ea5e9" stop-opacity="0.30"/>
+      <stop offset="85%" stop-color="#0ea5e9" stop-opacity="0.15"/>
+      <stop offset="100%" stop-color="#0ea5e9" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+
+  <!-- Dashed line S to G -->
+  <line x1="160" y1="170" x2="500" y2="170" stroke="#3a3a5a" stroke-width="1.5" stroke-dasharray="6,4"/>
+
+  <!-- A* big circle (radius = distance S→G = 340px, but we show ~155px for visual fit) -->
+  <circle cx="160" cy="170" r="155" fill="url(#gAstar)" stroke="#e94560" stroke-width="1.5" stroke-opacity="0.4"/>
+
+  <!-- Bidirectional: FWD circle from S (radius = r/2 ≈ 78px) -->
+  <circle cx="160" cy="170" r="78" fill="url(#gFwd)" stroke="#0ea5e9" stroke-width="1.5" stroke-opacity="0.5"/>
+
+  <!-- Bidirectional: BWD circle from G (radius = r/2 ≈ 78px) -->
+  <circle cx="500" cy="170" r="78" fill="url(#gBwd)" stroke="#0ea5e9" stroke-width="1.5" stroke-opacity="0.5"/>
+
+  <!-- S node -->
+  <circle cx="160" cy="170" r="14" fill="#16213e" stroke="#0f3460" stroke-width="2.5"/>
+  <text x="160" y="175" text-anchor="middle" fill="#10b981" font-family="monospace" font-size="14" font-weight="bold">S</text>
+
+  <!-- G node -->
+  <circle cx="500" cy="170" r="14" fill="#16213e" stroke="#0f3460" stroke-width="2.5"/>
+  <text x="500" y="175" text-anchor="middle" fill="#e94560" font-family="monospace" font-size="14" font-weight="bold">G</text>
+
+  <!-- Meeting point diamond -->
+  <polygon points="330,157 343,170 330,183 317,170" fill="#7c3aed" fill-opacity="0.7" stroke="#a78bfa" stroke-width="1.5"/>
+  <text x="330" y="148" text-anchor="middle" fill="#a78bfa" font-family="monospace" font-size="11">meet</text>
+
+  <!-- Labels on circles -->
+  <!-- A* big circle label -->
+  <text x="160" y="38" text-anchor="middle" fill="#e94560" font-family="monospace" font-size="12" opacity="0.8">A* area = pi x r^2</text>
+  <line x1="160" y1="42" x2="160" y2="55" stroke="#e94560" stroke-width="0.8" stroke-opacity="0.4" marker-end="none"/>
+
+  <!-- FWD label -->
+  <text x="120" y="260" text-anchor="middle" fill="#0ea5e9" font-family="monospace" font-size="11" opacity="0.8">FWD</text>
+  <text x="120" y="274" text-anchor="middle" fill="#0ea5e9" font-family="monospace" font-size="11" opacity="0.8">r/2</text>
+
+  <!-- BWD label -->
+  <text x="540" y="260" text-anchor="middle" fill="#0ea5e9" font-family="monospace" font-size="11" opacity="0.8">BWD</text>
+  <text x="540" y="274" text-anchor="middle" fill="#0ea5e9" font-family="monospace" font-size="11" opacity="0.8">r/2</text>
+
+  <!-- Radius annotations -->
+  <!-- r full -->
+  <line x1="160" y1="300" x2="315" y2="300" stroke="#e94560" stroke-width="1" stroke-opacity="0.5"/>
+  <line x1="160" y1="295" x2="160" y2="305" stroke="#e94560" stroke-width="1" stroke-opacity="0.5"/>
+  <line x1="315" y1="295" x2="315" y2="305" stroke="#e94560" stroke-width="1" stroke-opacity="0.5"/>
+  <text x="237" y="318" text-anchor="middle" fill="#e94560" font-family="monospace" font-size="11" opacity="0.6">r</text>
+
+  <!-- r/2 fwd -->
+  <line x1="160" y1="325" x2="238" y2="325" stroke="#0ea5e9" stroke-width="1" stroke-opacity="0.5"/>
+  <line x1="160" y1="320" x2="160" y2="330" stroke="#0ea5e9" stroke-width="1" stroke-opacity="0.5"/>
+  <line x1="238" y1="320" x2="238" y2="330" stroke="#0ea5e9" stroke-width="1" stroke-opacity="0.5"/>
+  <text x="199" y="340" text-anchor="middle" fill="#0ea5e9" font-family="monospace" font-size="10" opacity="0.6">r/2</text>
+
+  <!-- "Wasted" annotation in the red-only area -->
+  <text x="60" y="105" fill="#e94560" font-family="monospace" font-size="11" opacity="0.5" transform="rotate(-20, 60, 105)">wasted</text>
+  <text x="260" y="85" fill="#e94560" font-family="monospace" font-size="11" opacity="0.5">wasted</text>
+</svg>
+
+<div class="legend">
+  <div class="legend-item">
+    <div class="legend-swatch" style="background: rgba(233, 69, 96, 0.3); border: 1px solid #e94560;"></div>
+    A* explored (full circle)
+  </div>
+  <div class="legend-item">
+    <div class="legend-swatch" style="background: rgba(14, 165, 233, 0.35); border: 1px solid #0ea5e9;"></div>
+    Bidirectional explored (2 half-circles)
+  </div>
+  <div class="legend-item">
+    <div class="legend-swatch" style="background: rgba(124, 58, 237, 0.5); border: 1px solid #a78bfa;"></div>
+    Meeting point
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════ -->
+<!-- Section 2: Grid Comparison                         -->
+<!-- ═══════════════════════════════════════════════════ -->
+<div class="section-title">Node Exploration Comparison</div>
+
+<div class="grid-container">
+  <!-- A* Grid -->
+  <div class="grid-panel">
+    <div class="grid-label astar">Standard A*</div>
+    <svg width="262" height="158" viewBox="0 0 262 158">
+      <!-- Grid background -->
+      <rect width="262" height="158" rx="6" fill="#0d1117"/>
+      <!--
+        20 cols x 12 rows, cell=13px
+        S at col 1, row 6 (center-left)
+        G at col 18, row 6 (center-right)
+        A* circle: center=S, radius covers to G (≈17 cols)
+        We fill cells within the big circle.
+      -->
+      <!-- S position: col=1, row=5 → cx=1*13+7=20, cy=5*13+7=72 -->
+      <!-- G position: col=19, row=5 → cx=19*13+7=254, cy=72 -->
+      <!-- Circle radius in cells: ~18 cols → 18*13=234px but we use the grid -->
+
+      <!-- Explored cells (within radius ~17 cells from S) -->
+      <!-- Row 0 -->
+      <rect x="53" y="1" width="12" height="12" rx="2" fill="#e94560" opacity="0.15"/>
+      <rect x="66" y="1" width="12" height="12" rx="2" fill="#e94560" opacity="0.18"/>
+      <rect x="79" y="1" width="12" height="12" rx="2" fill="#e94560" opacity="0.20"/>
+      <rect x="92" y="1" width="12" height="12" rx="2" fill="#e94560" opacity="0.22"/>
+      <rect x="105" y="1" width="12" height="12" rx="2" fill="#e94560" opacity="0.22"/>
+      <rect x="118" y="1" width="12" height="12" rx="2" fill="#e94560" opacity="0.20"/>
+      <rect x="131" y="1" width="12" height="12" rx="2" fill="#e94560" opacity="0.18"/>
+      <rect x="144" y="1" width="12" height="12" rx="2" fill="#e94560" opacity="0.15"/>
+      <!-- Row 1 -->
+      <rect x="27" y="14" width="12" height="12" rx="2" fill="#e94560" opacity="0.18"/>
+      <rect x="40" y="14" width="12" height="12" rx="2" fill="#e94560" opacity="0.22"/>
+      <rect x="53" y="14" width="12" height="12" rx="2" fill="#e94560" opacity="0.25"/>
+      <rect x="66" y="14" width="12" height="12" rx="2" fill="#e94560" opacity="0.28"/>
+      <rect x="79" y="14" width="12" height="12" rx="2" fill="#e94560" opacity="0.30"/>
+      <rect x="92" y="14" width="12" height="12" rx="2" fill="#e94560" opacity="0.32"/>
+      <rect x="105" y="14" width="12" height="12" rx="2" fill="#e94560" opacity="0.32"/>
+      <rect x="118" y="14" width="12" height="12" rx="2" fill="#e94560" opacity="0.30"/>
+      <rect x="131" y="14" width="12" height="12" rx="2" fill="#e94560" opacity="0.28"/>
+      <rect x="144" y="14" width="12" height="12" rx="2" fill="#e94560" opacity="0.25"/>
+      <rect x="157" y="14" width="12" height="12" rx="2" fill="#e94560" opacity="0.22"/>
+      <rect x="170" y="14" width="12" height="12" rx="2" fill="#e94560" opacity="0.18"/>
+      <!-- Row 2 -->
+      <rect x="14" y="27" width="12" height="12" rx="2" fill="#e94560" opacity="0.22"/>
+      <rect x="27" y="27" width="12" height="12" rx="2" fill="#e94560" opacity="0.25"/>
+      <rect x="40" y="27" width="12" height="12" rx="2" fill="#e94560" opacity="0.28"/>
+      <rect x="53" y="27" width="12" height="12" rx="2" fill="#e94560" opacity="0.32"/>
+      <rect x="66" y="27" width="12" height="12" rx="2" fill="#e94560" opacity="0.35"/>
+      <rect x="79" y="27" width="12" height="12" rx="2" fill="#e94560" opacity="0.38"/>
+      <rect x="92" y="27" width="12" height="12" rx="2" fill="#e94560" opacity="0.38"/>
+      <rect x="105" y="27" width="12" height="12" rx="2" fill="#e94560" opacity="0.38"/>
+      <rect x="118" y="27" width="12" height="12" rx="2" fill="#e94560" opacity="0.35"/>
+      <rect x="131" y="27" width="12" height="12" rx="2" fill="#e94560" opacity="0.32"/>
+      <rect x="144" y="27" width="12" height="12" rx="2" fill="#e94560" opacity="0.28"/>
+      <rect x="157" y="27" width="12" height="12" rx="2" fill="#e94560" opacity="0.25"/>
+      <rect x="170" y="27" width="12" height="12" rx="2" fill="#e94560" opacity="0.22"/>
+      <rect x="183" y="27" width="12" height="12" rx="2" fill="#e94560" opacity="0.18"/>
+      <!-- Row 3 -->
+      <rect x="1" y="40" width="12" height="12" rx="2" fill="#e94560" opacity="0.25"/>
+      <rect x="14" y="40" width="12" height="12" rx="2" fill="#e94560" opacity="0.28"/>
+      <rect x="27" y="40" width="12" height="12" rx="2" fill="#e94560" opacity="0.32"/>
+      <rect x="40" y="40" width="12" height="12" rx="2" fill="#e94560" opacity="0.35"/>
+      <rect x="53" y="40" width="12" height="12" rx="2" fill="#e94560" opacity="0.38"/>
+      <rect x="66" y="40" width="12" height="12" rx="2" fill="#e94560" opacity="0.42"/>
+      <rect x="79" y="40" width="12" height="12" rx="2" fill="#e94560" opacity="0.45"/>
+      <rect x="92" y="40" width="12" height="12" rx="2" fill="#e94560" opacity="0.45"/>
+      <rect x="105" y="40" width="12" height="12" rx="2" fill="#e94560" opacity="0.45"/>
+      <rect x="118" y="40" width="12" height="12" rx="2" fill="#e94560" opacity="0.42"/>
+      <rect x="131" y="40" width="12" height="12" rx="2" fill="#e94560" opacity="0.38"/>
+      <rect x="144" y="40" width="12" height="12" rx="2" fill="#e94560" opacity="0.35"/>
+      <rect x="157" y="40" width="12" height="12" rx="2" fill="#e94560" opacity="0.32"/>
+      <rect x="170" y="40" width="12" height="12" rx="2" fill="#e94560" opacity="0.28"/>
+      <rect x="183" y="40" width="12" height="12" rx="2" fill="#e94560" opacity="0.25"/>
+      <rect x="196" y="40" width="12" height="12" rx="2" fill="#e94560" opacity="0.20"/>
+      <!-- Row 4 -->
+      <rect x="1" y="53" width="12" height="12" rx="2" fill="#e94560" opacity="0.28"/>
+      <rect x="14" y="53" width="12" height="12" rx="2" fill="#e94560" opacity="0.32"/>
+      <rect x="27" y="53" width="12" height="12" rx="2" fill="#e94560" opacity="0.35"/>
+      <rect x="40" y="53" width="12" height="12" rx="2" fill="#e94560" opacity="0.38"/>
+      <rect x="53" y="53" width="12" height="12" rx="2" fill="#e94560" opacity="0.42"/>
+      <rect x="66" y="53" width="12" height="12" rx="2" fill="#e94560" opacity="0.45"/>
+      <rect x="79" y="53" width="12" height="12" rx="2" fill="#e94560" opacity="0.48"/>
+      <rect x="92" y="53" width="12" height="12" rx="2" fill="#e94560" opacity="0.50"/>
+      <rect x="105" y="53" width="12" height="12" rx="2" fill="#e94560" opacity="0.50"/>
+      <rect x="118" y="53" width="12" height="12" rx="2" fill="#e94560" opacity="0.48"/>
+      <rect x="131" y="53" width="12" height="12" rx="2" fill="#e94560" opacity="0.45"/>
+      <rect x="144" y="53" width="12" height="12" rx="2" fill="#e94560" opacity="0.42"/>
+      <rect x="157" y="53" width="12" height="12" rx="2" fill="#e94560" opacity="0.38"/>
+      <rect x="170" y="53" width="12" height="12" rx="2" fill="#e94560" opacity="0.35"/>
+      <rect x="183" y="53" width="12" height="12" rx="2" fill="#e94560" opacity="0.30"/>
+      <rect x="196" y="53" width="12" height="12" rx="2" fill="#e94560" opacity="0.25"/>
+      <rect x="209" y="53" width="12" height="12" rx="2" fill="#e94560" opacity="0.20"/>
+      <!-- Row 5 (center - S row) -->
+      <rect x="1" y="66" width="12" height="12" rx="2" fill="#e94560" opacity="0.30"/>
+      <rect x="14" y="66" width="12" height="12" rx="2" fill="#e94560" opacity="0.35"/>
+      <rect x="27" y="66" width="12" height="12" rx="2" fill="#e94560" opacity="0.38"/>
+      <rect x="40" y="66" width="12" height="12" rx="2" fill="#e94560" opacity="0.42"/>
+      <rect x="53" y="66" width="12" height="12" rx="2" fill="#e94560" opacity="0.45"/>
+      <rect x="66" y="66" width="12" height="12" rx="2" fill="#e94560" opacity="0.48"/>
+      <rect x="79" y="66" width="12" height="12" rx="2" fill="#e94560" opacity="0.52"/>
+      <rect x="92" y="66" width="12" height="12" rx="2" fill="#e94560" opacity="0.55"/>
+      <rect x="105" y="66" width="12" height="12" rx="2" fill="#e94560" opacity="0.55"/>
+      <rect x="118" y="66" width="12" height="12" rx="2" fill="#e94560" opacity="0.52"/>
+      <rect x="131" y="66" width="12" height="12" rx="2" fill="#e94560" opacity="0.48"/>
+      <rect x="144" y="66" width="12" height="12" rx="2" fill="#e94560" opacity="0.45"/>
+      <rect x="157" y="66" width="12" height="12" rx="2" fill="#e94560" opacity="0.42"/>
+      <rect x="170" y="66" width="12" height="12" rx="2" fill="#e94560" opacity="0.38"/>
+      <rect x="183" y="66" width="12" height="12" rx="2" fill="#e94560" opacity="0.35"/>
+      <rect x="196" y="66" width="12" height="12" rx="2" fill="#e94560" opacity="0.30"/>
+      <rect x="209" y="66" width="12" height="12" rx="2" fill="#e94560" opacity="0.25"/>
+      <rect x="222" y="66" width="12" height="12" rx="2" fill="#e94560" opacity="0.20"/>
+      <rect x="235" y="66" width="12" height="12" rx="2" fill="#e94560" opacity="0.15"/>
+      <rect x="248" y="66" width="12" height="12" rx="2" fill="#e94560" opacity="0.12"/>
+      <!-- Row 6 (mirror of row 4) -->
+      <rect x="1" y="79" width="12" height="12" rx="2" fill="#e94560" opacity="0.28"/>
+      <rect x="14" y="79" width="12" height="12" rx="2" fill="#e94560" opacity="0.32"/>
+      <rect x="27" y="79" width="12" height="12" rx="2" fill="#e94560" opacity="0.35"/>
+      <rect x="40" y="79" width="12" height="12" rx="2" fill="#e94560" opacity="0.38"/>
+      <rect x="53" y="79" width="12" height="12" rx="2" fill="#e94560" opacity="0.42"/>
+      <rect x="66" y="79" width="12" height="12" rx="2" fill="#e94560" opacity="0.45"/>
+      <rect x="79" y="79" width="12" height="12" rx="2" fill="#e94560" opacity="0.48"/>
+      <rect x="92" y="79" width="12" height="12" rx="2" fill="#e94560" opacity="0.50"/>
+      <rect x="105" y="79" width="12" height="12" rx="2" fill="#e94560" opacity="0.50"/>
+      <rect x="118" y="79" width="12" height="12" rx="2" fill="#e94560" opacity="0.48"/>
+      <rect x="131" y="79" width="12" height="12" rx="2" fill="#e94560" opacity="0.45"/>
+      <rect x="144" y="79" width="12" height="12" rx="2" fill="#e94560" opacity="0.42"/>
+      <rect x="157" y="79" width="12" height="12" rx="2" fill="#e94560" opacity="0.38"/>
+      <rect x="170" y="79" width="12" height="12" rx="2" fill="#e94560" opacity="0.35"/>
+      <rect x="183" y="79" width="12" height="12" rx="2" fill="#e94560" opacity="0.30"/>
+      <rect x="196" y="79" width="12" height="12" rx="2" fill="#e94560" opacity="0.25"/>
+      <rect x="209" y="79" width="12" height="12" rx="2" fill="#e94560" opacity="0.20"/>
+      <!-- Row 7 (mirror of row 3) -->
+      <rect x="1" y="92" width="12" height="12" rx="2" fill="#e94560" opacity="0.25"/>
+      <rect x="14" y="92" width="12" height="12" rx="2" fill="#e94560" opacity="0.28"/>
+      <rect x="27" y="92" width="12" height="12" rx="2" fill="#e94560" opacity="0.32"/>
+      <rect x="40" y="92" width="12" height="12" rx="2" fill="#e94560" opacity="0.35"/>
+      <rect x="53" y="92" width="12" height="12" rx="2" fill="#e94560" opacity="0.38"/>
+      <rect x="66" y="92" width="12" height="12" rx="2" fill="#e94560" opacity="0.42"/>
+      <rect x="79" y="92" width="12" height="12" rx="2" fill="#e94560" opacity="0.45"/>
+      <rect x="92" y="92" width="12" height="12" rx="2" fill="#e94560" opacity="0.45"/>
+      <rect x="105" y="92" width="12" height="12" rx="2" fill="#e94560" opacity="0.45"/>
+      <rect x="118" y="92" width="12" height="12" rx="2" fill="#e94560" opacity="0.42"/>
+      <rect x="131" y="92" width="12" height="12" rx="2" fill="#e94560" opacity="0.38"/>
+      <rect x="144" y="92" width="12" height="12" rx="2" fill="#e94560" opacity="0.35"/>
+      <rect x="157" y="92" width="12" height="12" rx="2" fill="#e94560" opacity="0.32"/>
+      <rect x="170" y="92" width="12" height="12" rx="2" fill="#e94560" opacity="0.28"/>
+      <rect x="183" y="92" width="12" height="12" rx="2" fill="#e94560" opacity="0.25"/>
+      <rect x="196" y="92" width="12" height="12" rx="2" fill="#e94560" opacity="0.20"/>
+      <!-- Row 8 (mirror of row 2) -->
+      <rect x="14" y="105" width="12" height="12" rx="2" fill="#e94560" opacity="0.22"/>
+      <rect x="27" y="105" width="12" height="12" rx="2" fill="#e94560" opacity="0.25"/>
+      <rect x="40" y="105" width="12" height="12" rx="2" fill="#e94560" opacity="0.28"/>
+      <rect x="53" y="105" width="12" height="12" rx="2" fill="#e94560" opacity="0.32"/>
+      <rect x="66" y="105" width="12" height="12" rx="2" fill="#e94560" opacity="0.35"/>
+      <rect x="79" y="105" width="12" height="12" rx="2" fill="#e94560" opacity="0.38"/>
+      <rect x="92" y="105" width="12" height="12" rx="2" fill="#e94560" opacity="0.38"/>
+      <rect x="105" y="105" width="12" height="12" rx="2" fill="#e94560" opacity="0.38"/>
+      <rect x="118" y="105" width="12" height="12" rx="2" fill="#e94560" opacity="0.35"/>
+      <rect x="131" y="105" width="12" height="12" rx="2" fill="#e94560" opacity="0.32"/>
+      <rect x="144" y="105" width="12" height="12" rx="2" fill="#e94560" opacity="0.28"/>
+      <rect x="157" y="105" width="12" height="12" rx="2" fill="#e94560" opacity="0.25"/>
+      <rect x="170" y="105" width="12" height="12" rx="2" fill="#e94560" opacity="0.22"/>
+      <rect x="183" y="105" width="12" height="12" rx="2" fill="#e94560" opacity="0.18"/>
+      <!-- Row 9 (mirror of row 1) -->
+      <rect x="27" y="118" width="12" height="12" rx="2" fill="#e94560" opacity="0.18"/>
+      <rect x="40" y="118" width="12" height="12" rx="2" fill="#e94560" opacity="0.22"/>
+      <rect x="53" y="118" width="12" height="12" rx="2" fill="#e94560" opacity="0.25"/>
+      <rect x="66" y="118" width="12" height="12" rx="2" fill="#e94560" opacity="0.28"/>
+      <rect x="79" y="118" width="12" height="12" rx="2" fill="#e94560" opacity="0.30"/>
+      <rect x="92" y="118" width="12" height="12" rx="2" fill="#e94560" opacity="0.32"/>
+      <rect x="105" y="118" width="12" height="12" rx="2" fill="#e94560" opacity="0.32"/>
+      <rect x="118" y="118" width="12" height="12" rx="2" fill="#e94560" opacity="0.30"/>
+      <rect x="131" y="118" width="12" height="12" rx="2" fill="#e94560" opacity="0.28"/>
+      <rect x="144" y="118" width="12" height="12" rx="2" fill="#e94560" opacity="0.25"/>
+      <rect x="157" y="118" width="12" height="12" rx="2" fill="#e94560" opacity="0.22"/>
+      <rect x="170" y="118" width="12" height="12" rx="2" fill="#e94560" opacity="0.18"/>
+      <!-- Row 10 (mirror of row 0) -->
+      <rect x="53" y="131" width="12" height="12" rx="2" fill="#e94560" opacity="0.15"/>
+      <rect x="66" y="131" width="12" height="12" rx="2" fill="#e94560" opacity="0.18"/>
+      <rect x="79" y="131" width="12" height="12" rx="2" fill="#e94560" opacity="0.20"/>
+      <rect x="92" y="131" width="12" height="12" rx="2" fill="#e94560" opacity="0.22"/>
+      <rect x="105" y="131" width="12" height="12" rx="2" fill="#e94560" opacity="0.22"/>
+      <rect x="118" y="131" width="12" height="12" rx="2" fill="#e94560" opacity="0.20"/>
+      <rect x="131" y="131" width="12" height="12" rx="2" fill="#e94560" opacity="0.18"/>
+      <rect x="144" y="131" width="12" height="12" rx="2" fill="#e94560" opacity="0.15"/>
+
+      <!-- S marker -->
+      <circle cx="7" cy="72" r="5" fill="#10b981"/>
+      <text x="7" y="75" text-anchor="middle" fill="#0d1117" font-family="monospace" font-size="8" font-weight="bold">S</text>
+      <!-- G marker -->
+      <circle cx="254" cy="72" r="5" fill="#f59e0b"/>
+      <text x="254" y="75" text-anchor="middle" fill="#0d1117" font-family="monospace" font-size="8" font-weight="bold">G</text>
+    </svg>
+    <div class="grid-count">Explored: <strong>~177 cells</strong></div>
+  </div>
+
+  <!-- Bidirectional Grid -->
+  <div class="grid-panel">
+    <div class="grid-label bi">Bidirectional A*</div>
+    <svg width="262" height="158" viewBox="0 0 262 158">
+      <rect width="262" height="158" rx="6" fill="#0d1117"/>
+
+      <!-- FWD circle from S: small circle, radius ~5 cells from col 0 -->
+      <!-- Row 2 -->
+      <rect x="14" y="27" width="12" height="12" rx="2" fill="#0ea5e9" opacity="0.18"/>
+      <rect x="27" y="27" width="12" height="12" rx="2" fill="#0ea5e9" opacity="0.22"/>
+      <rect x="40" y="27" width="12" height="12" rx="2" fill="#0ea5e9" opacity="0.25"/>
+      <rect x="53" y="27" width="12" height="12" rx="2" fill="#0ea5e9" opacity="0.22"/>
+      <rect x="66" y="27" width="12" height="12" rx="2" fill="#0ea5e9" opacity="0.18"/>
+      <!-- Row 3 -->
+      <rect x="1" y="40" width="12" height="12" rx="2" fill="#0ea5e9" opacity="0.22"/>
+      <rect x="14" y="40" width="12" height="12" rx="2" fill="#0ea5e9" opacity="0.28"/>
+      <rect x="27" y="40" width="12" height="12" rx="2" fill="#0ea5e9" opacity="0.35"/>
+      <rect x="40" y="40" width="12" height="12" rx="2" fill="#0ea5e9" opacity="0.38"/>
+      <rect x="53" y="40" width="12" height="12" rx="2" fill="#0ea5e9" opacity="0.35"/>
+      <rect x="66" y="40" width="12" height="12" rx="2" fill="#0ea5e9" opacity="0.28"/>
+      <rect x="79" y="40" width="12" height="12" rx="2" fill="#0ea5e9" opacity="0.22"/>
+      <!-- Row 4 -->
+      <rect x="1" y="53" width="12" height="12" rx="2" fill="#0ea5e9" opacity="0.28"/>
+      <rect x="14" y="53" width="12" height="12" rx="2" fill="#0ea5e9" opacity="0.35"/>
+      <rect x="27" y="53" width="12" height="12" rx="2" fill="#0ea5e9" opacity="0.42"/>
+      <rect x="40" y="53" width="12" height="12" rx="2" fill="#0ea5e9" opacity="0.48"/>
+      <rect x="53" y="53" width="12" height="12" rx="2" fill="#0ea5e9" opacity="0.45"/>
+      <rect x="66" y="53" width="12" height="12" rx="2" fill="#0ea5e9" opacity="0.38"/>
+      <rect x="79" y="53" width="12" height="12" rx="2" fill="#0ea5e9" opacity="0.28"/>
+      <rect x="92" y="53" width="12" height="12" rx="2" fill="#0ea5e9" opacity="0.20"/>
+      <!-- Row 5 (S row) -->
+      <rect x="1" y="66" width="12" height="12" rx="2" fill="#0ea5e9" opacity="0.32"/>
+      <rect x="14" y="66" width="12" height="12" rx="2" fill="#0ea5e9" opacity="0.42"/>
+      <rect x="27" y="66" width="12" height="12" rx="2" fill="#0ea5e9" opacity="0.50"/>
+      <rect x="40" y="66" width="12" height="12" rx="2" fill="#0ea5e9" opacity="0.55"/>
+      <rect x="53" y="66" width="12" height="12" rx="2" fill="#0ea5e9" opacity="0.50"/>
+      <rect x="66" y="66" width="12" height="12" rx="2" fill="#0ea5e9" opacity="0.42"/>
+      <rect x="79" y="66" width="12" height="12" rx="2" fill="#0ea5e9" opacity="0.32"/>
+      <rect x="92" y="66" width="12" height="12" rx="2" fill="#0ea5e9" opacity="0.22"/>
+      <rect x="105" y="66" width="12" height="12" rx="2" fill="#0ea5e9" opacity="0.15"/>
+      <!-- Row 6 (mirror row 4) -->
+      <rect x="1" y="79" width="12" height="12" rx="2" fill="#0ea5e9" opacity="0.28"/>
+      <rect x="14" y="79" width="12" height="12" rx="2" fill="#0ea5e9" opacity="0.35"/>
+      <rect x="27" y="79" width="12" height="12" rx="2" fill="#0ea5e9" opacity="0.42"/>
+      <rect x="40" y="79" width="12" height="12" rx="2" fill="#0ea5e9" opacity="0.48"/>
+      <rect x="53" y="79" width="12" height="12" rx="2" fill="#0ea5e9" opacity="0.45"/>
+      <rect x="66" y="79" width="12" height="12" rx="2" fill="#0ea5e9" opacity="0.38"/>
+      <rect x="79" y="79" width="12" height="12" rx="2" fill="#0ea5e9" opacity="0.28"/>
+      <rect x="92" y="79" width="12" height="12" rx="2" fill="#0ea5e9" opacity="0.20"/>
+      <!-- Row 7 (mirror row 3) -->
+      <rect x="1" y="92" width="12" height="12" rx="2" fill="#0ea5e9" opacity="0.22"/>
+      <rect x="14" y="92" width="12" height="12" rx="2" fill="#0ea5e9" opacity="0.28"/>
+      <rect x="27" y="92" width="12" height="12" rx="2" fill="#0ea5e9" opacity="0.35"/>
+      <rect x="40" y="92" width="12" height="12" rx="2" fill="#0ea5e9" opacity="0.38"/>
+      <rect x="53" y="92" width="12" height="12" rx="2" fill="#0ea5e9" opacity="0.35"/>
+      <rect x="66" y="92" width="12" height="12" rx="2" fill="#0ea5e9" opacity="0.28"/>
+      <rect x="79" y="92" width="12" height="12" rx="2" fill="#0ea5e9" opacity="0.22"/>
+      <!-- Row 8 (mirror row 2) -->
+      <rect x="14" y="105" width="12" height="12" rx="2" fill="#0ea5e9" opacity="0.18"/>
+      <rect x="27" y="105" width="12" height="12" rx="2" fill="#0ea5e9" opacity="0.22"/>
+      <rect x="40" y="105" width="12" height="12" rx="2" fill="#0ea5e9" opacity="0.25"/>
+      <rect x="53" y="105" width="12" height="12" rx="2" fill="#0ea5e9" opacity="0.22"/>
+      <rect x="66" y="105" width="12" height="12" rx="2" fill="#0ea5e9" opacity="0.18"/>
+
+      <!-- BWD circle from G: small circle, radius ~5 cells from col 19 -->
+      <!-- Row 2 -->
+      <rect x="196" y="27" width="12" height="12" rx="2" fill="#38bdf8" opacity="0.18"/>
+      <rect x="209" y="27" width="12" height="12" rx="2" fill="#38bdf8" opacity="0.22"/>
+      <rect x="222" y="27" width="12" height="12" rx="2" fill="#38bdf8" opacity="0.25"/>
+      <rect x="235" y="27" width="12" height="12" rx="2" fill="#38bdf8" opacity="0.22"/>
+      <rect x="248" y="27" width="12" height="12" rx="2" fill="#38bdf8" opacity="0.18"/>
+      <!-- Row 3 -->
+      <rect x="183" y="40" width="12" height="12" rx="2" fill="#38bdf8" opacity="0.22"/>
+      <rect x="196" y="40" width="12" height="12" rx="2" fill="#38bdf8" opacity="0.28"/>
+      <rect x="209" y="40" width="12" height="12" rx="2" fill="#38bdf8" opacity="0.35"/>
+      <rect x="222" y="40" width="12" height="12" rx="2" fill="#38bdf8" opacity="0.38"/>
+      <rect x="235" y="40" width="12" height="12" rx="2" fill="#38bdf8" opacity="0.35"/>
+      <rect x="248" y="40" width="12" height="12" rx="2" fill="#38bdf8" opacity="0.28"/>
+      <!-- Row 4 -->
+      <rect x="170" y="53" width="12" height="12" rx="2" fill="#38bdf8" opacity="0.20"/>
+      <rect x="183" y="53" width="12" height="12" rx="2" fill="#38bdf8" opacity="0.28"/>
+      <rect x="196" y="53" width="12" height="12" rx="2" fill="#38bdf8" opacity="0.35"/>
+      <rect x="209" y="53" width="12" height="12" rx="2" fill="#38bdf8" opacity="0.42"/>
+      <rect x="222" y="53" width="12" height="12" rx="2" fill="#38bdf8" opacity="0.48"/>
+      <rect x="235" y="53" width="12" height="12" rx="2" fill="#38bdf8" opacity="0.45"/>
+      <rect x="248" y="53" width="12" height="12" rx="2" fill="#38bdf8" opacity="0.35"/>
+      <!-- Row 5 (G row) -->
+      <rect x="157" y="66" width="12" height="12" rx="2" fill="#38bdf8" opacity="0.15"/>
+      <rect x="170" y="66" width="12" height="12" rx="2" fill="#38bdf8" opacity="0.22"/>
+      <rect x="183" y="66" width="12" height="12" rx="2" fill="#38bdf8" opacity="0.32"/>
+      <rect x="196" y="66" width="12" height="12" rx="2" fill="#38bdf8" opacity="0.42"/>
+      <rect x="209" y="66" width="12" height="12" rx="2" fill="#38bdf8" opacity="0.50"/>
+      <rect x="222" y="66" width="12" height="12" rx="2" fill="#38bdf8" opacity="0.55"/>
+      <rect x="235" y="66" width="12" height="12" rx="2" fill="#38bdf8" opacity="0.50"/>
+      <rect x="248" y="66" width="12" height="12" rx="2" fill="#38bdf8" opacity="0.42"/>
+      <!-- Row 6 -->
+      <rect x="170" y="79" width="12" height="12" rx="2" fill="#38bdf8" opacity="0.20"/>
+      <rect x="183" y="79" width="12" height="12" rx="2" fill="#38bdf8" opacity="0.28"/>
+      <rect x="196" y="79" width="12" height="12" rx="2" fill="#38bdf8" opacity="0.35"/>
+      <rect x="209" y="79" width="12" height="12" rx="2" fill="#38bdf8" opacity="0.42"/>
+      <rect x="222" y="79" width="12" height="12" rx="2" fill="#38bdf8" opacity="0.48"/>
+      <rect x="235" y="79" width="12" height="12" rx="2" fill="#38bdf8" opacity="0.45"/>
+      <rect x="248" y="79" width="12" height="12" rx="2" fill="#38bdf8" opacity="0.35"/>
+      <!-- Row 7 -->
+      <rect x="183" y="92" width="12" height="12" rx="2" fill="#38bdf8" opacity="0.22"/>
+      <rect x="196" y="92" width="12" height="12" rx="2" fill="#38bdf8" opacity="0.28"/>
+      <rect x="209" y="92" width="12" height="12" rx="2" fill="#38bdf8" opacity="0.35"/>
+      <rect x="222" y="92" width="12" height="12" rx="2" fill="#38bdf8" opacity="0.38"/>
+      <rect x="235" y="92" width="12" height="12" rx="2" fill="#38bdf8" opacity="0.35"/>
+      <rect x="248" y="92" width="12" height="12" rx="2" fill="#38bdf8" opacity="0.28"/>
+      <!-- Row 8 -->
+      <rect x="196" y="105" width="12" height="12" rx="2" fill="#38bdf8" opacity="0.18"/>
+      <rect x="209" y="105" width="12" height="12" rx="2" fill="#38bdf8" opacity="0.22"/>
+      <rect x="222" y="105" width="12" height="12" rx="2" fill="#38bdf8" opacity="0.25"/>
+      <rect x="235" y="105" width="12" height="12" rx="2" fill="#38bdf8" opacity="0.22"/>
+      <rect x="248" y="105" width="12" height="12" rx="2" fill="#38bdf8" opacity="0.18"/>
+
+      <!-- Meeting point -->
+      <rect x="118" y="66" width="12" height="12" rx="2" fill="#7c3aed" opacity="0.6"/>
+      <rect x="131" y="66" width="12" height="12" rx="2" fill="#7c3aed" opacity="0.5"/>
+      <rect x="144" y="66" width="12" height="12" rx="2" fill="#7c3aed" opacity="0.4"/>
+
+      <!-- S marker -->
+      <circle cx="7" cy="72" r="5" fill="#10b981"/>
+      <text x="7" y="75" text-anchor="middle" fill="#0d1117" font-family="monospace" font-size="8" font-weight="bold">S</text>
+      <!-- G marker -->
+      <circle cx="254" cy="72" r="5" fill="#f59e0b"/>
+      <text x="254" y="75" text-anchor="middle" fill="#0d1117" font-family="monospace" font-size="8" font-weight="bold">G</text>
+      <!-- Meet marker -->
+      <polygon points="131,60 137,66 131,72 125,66" fill="#a78bfa" fill-opacity="0.8"/>
+    </svg>
+    <div class="grid-count">Explored: <strong>~89 cells</strong></div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════ -->
+<!-- Section 3: Stats Table                             -->
+<!-- ═══════════════════════════════════════════════════ -->
+<div class="section-title">By the Numbers</div>
+
+<div class="stats">
+  <table>
+    <tr>
+      <th>Metric</th>
+      <th>Standard A*</th>
+      <th>Bidirectional A*</th>
+      <th>Savings</th>
+    </tr>
+    <tr>
+      <td>Search area</td>
+      <td class="val-astar">pi x r^2</td>
+      <td class="val-bi">pi x r^2 / 2</td>
+      <td class="val-save">50%</td>
+    </tr>
+    <tr>
+      <td>Nodes explored</td>
+      <td class="val-astar">~177</td>
+      <td class="val-bi">~89</td>
+      <td class="val-save">~50%</td>
+    </tr>
+    <tr>
+      <td>Radius searched</td>
+      <td class="val-astar">r (full distance)</td>
+      <td class="val-bi">r/2 (each side)</td>
+      <td class="val-save">Half depth</td>
+    </tr>
+    <tr>
+      <td>Branching (k=4, d=10)</td>
+      <td class="val-astar">k^d = 1,048,576</td>
+      <td class="val-bi">2 x k^5 = 2,048</td>
+      <td class="val-save">512x fewer</td>
+    </tr>
+  </table>
+</div>
+
+<div class="insight">
+  <strong>When this matters:</strong>
+  Road networks (millions of nodes), uniform branching graphs, and long-distance routing (Paris to Berlin).
+  On small graphs (like 6 nodes), the overhead of managing two open sets outweighs the savings.
+  The real power shows at scale: with branching factor k and depth d, A* explores k^d nodes
+  while Bidirectional explores just 2 x k^(d/2) — an <strong>exponential</strong> reduction.
+</div>
+
+</body>
+</html>

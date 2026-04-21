@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+  body { background: #1a1a2e; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; font-family: monospace; }
+  svg { filter: drop-shadow(0 0 20px rgba(0,150,255,0.2)); }
+</style>
+</head>
+<body>
+<svg width="700" height="500" viewBox="0 0 700 500">
+  <!-- Edges -->
+  <g stroke="#4a6fa5" stroke-width="2.5" fill="none">
+    <!-- 0-2 --> <line x1="530" y1="120" x2="330" y2="120"/>
+    <!-- 0-4 --> <line x1="530" y1="120" x2="330" y2="350"/>
+    <!-- 0-5 --> <line x1="530" y1="120" x2="530" y2="350"/>
+    <!-- 1-4 --> <line x1="130" y1="350" x2="330" y2="350"/>
+    <!-- 1-5 --> <line x1="130" y1="350" x2="530" y2="350"/>
+    <!-- 2-3 --> <line x1="330" y1="120" x2="130" y2="120"/>
+    <!-- 2-4 --> <line x1="330" y1="120" x2="330" y2="350"/>
+    <!-- 4-5 --> <line x1="330" y1="350" x2="530" y2="350"/>
+  </g>
+
+  <!-- Edge labels (midpoints) -->
+  <g fill="#7a8ba8" font-size="13" text-anchor="middle" font-family="monospace">
+    <text x="430" y="108">0─2</text>
+    <text x="415" y="245">0─4</text>
+    <text x="555" y="240">0─5</text>
+    <text x="230" y="340">1─4</text>
+    <text x="330" y="390">1─5</text>
+    <text x="230" y="108">2─3</text>
+    <text x="305" y="240">2─4</text>
+    <text x="430" y="340">4─5</text>
+  </g>
+
+  <!-- Nodes -->
+  <g font-family="monospace" font-size="22" font-weight="bold">
+    <!-- Node 0 -->
+    <circle cx="530" cy="120" r="30" fill="#16213e" stroke="#0f3460" stroke-width="3"/>
+    <text x="530" y="128" fill="#e94560" text-anchor="middle">0</text>
+    <!-- Node 1 -->
+    <circle cx="130" cy="350" r="30" fill="#16213e" stroke="#0f3460" stroke-width="3"/>
+    <text x="130" y="358" fill="#e94560" text-anchor="middle">1</text>
+    <!-- Node 2 -->
+    <circle cx="330" cy="120" r="30" fill="#16213e" stroke="#0f3460" stroke-width="3"/>
+    <text x="330" y="128" fill="#e94560" text-anchor="middle">2</text>
+    <!-- Node 3 -->
+    <circle cx="130" cy="120" r="30" fill="#16213e" stroke="#0f3460" stroke-width="3"/>
+    <text x="130" y="128" fill="#e94560" text-anchor="middle">3</text>
+    <!-- Node 4 -->
+    <circle cx="330" cy="350" r="30" fill="#16213e" stroke="#0f3460" stroke-width="3"/>
+    <text x="330" y="358" fill="#e94560" text-anchor="middle">4</text>
+    <!-- Node 5 -->
+    <circle cx="530" cy="350" r="30" fill="#16213e" stroke="#0f3460" stroke-width="3"/>
+    <text x="530" y="358" fill="#e94560" text-anchor="middle">5</text>
+  </g>
+
+  <!-- Degree annotations -->
+  <g fill="#555" font-size="11" text-anchor="middle" font-family="monospace">
+    <text x="530" y="80">deg=3</text>
+    <text x="130" y="400">deg=2</text>
+    <text x="330" y="80">deg=4</text>
+    <text x="130" y="80">deg=1</text>
+    <text x="330" y="400">deg=4</text>
+    <text x="530" y="400">deg=3</text>
+  </g>
+
+  <!-- Title -->
+  <text x="350" y="460" fill="#7a8ba8" font-size="16" text-anchor="middle" font-family="monospace">
+    6 nodes  ·  8 edges  ·  undirected
+  </text>
+</svg>
+</body>
+</html>

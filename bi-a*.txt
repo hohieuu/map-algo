@@ -1,0 +1,291 @@
+========================================
+
+╔══════════════════════════════════════╗
+║      2. Bidirectional A*             ║
+╚══════════════════════════════════════╝
+
+GRAPH (with one-way edges):
+  → = one-way    ↔ = two-way
+
+  A↔B(3)  A→C(2)  B↔C(1)  B→D(4)
+  C↔E(5)  D↔E(4)  D↔F(3)  E↔F(2)
+
+
+                  /        4
+               [ B]----------------[ D]
+               / |                   |    \
+              /  |                   |         \3             /
+             /   |                   |              \      /
+            /3   |                   |                 [ F]
+          /      |                   |                /       \
+         /       |1                  |4             /
+        /        |                   |           /
+     [ A]        |                   |         /2
+         \       |                   |      /
+            \2   |                   |    /
+              \  |         5         | /
+               [ C]----------------[ E]
+                   \
+                      \
+
+========================================
+Bidirectional A*:  A  →  F
+========================================
+
+[init FWD] start=A  h(A,F)=5.10  f=5.10
+[init BWD] goal =F  h(F,A)=5.10  f=5.10
+
+Legend:  [>X]=current  [oX]=open  [xX]=closed  [#X]=path
+         FWD uses →   BWD uses ←
+
+─── step 1 ───────────────────────────────────────────
+  mu=+Inf  meet=  FWD open=1  BWD open=1
+  Direction: FWD →  (fwd min-f=5.10 <= bwd min-f=5.10)
+  Pick : A      f=5.10  ← lowest f in FWD open
+  Why  : g=0.00 + h=5.10 = f=5.10
+  Close: A      (added to FWD closed set)
+  Neighbors of A (FWD):
+    → B     weight=3.00  |  tentative g=0.00+3.00=3.00  h=4.12  f=7.12  ✓ NEW  cameFrom[B]=A
+    → C     weight=2.00  |  tentative g=0.00+2.00=2.00  h=4.47  f=6.47  ✓ NEW  cameFrom[C]=A
+  FWD cameFrom: {B←A, C←A}
+
+
+                  /        4
+               [fB]----------------[ D]
+             Fg=3 f=7                |    \
+              /  |                   |         \3             /
+             /   |                   |              \      /
+            /3   |                   |                 [bF]
+          /      |                   |               Bg=0 f=5 \
+         /       |1                  |4             /
+        /        |                   |           /
+     [FA]        |                   |         /2
+   Fg=0 f=5      |                   |      /
+            \2   |                   |    /
+              \  |         5         | /
+               [fC]----------------[ E]
+             Fg=2 f=6
+                      \
+
+─── step 2 ───────────────────────────────────────────
+  mu=+Inf  meet=  FWD open=2  BWD open=1
+  Direction: ← BWD  (bwd min-f=5.10 < fwd min-f=6.47)
+  Pick : F      f=5.10  ← lowest f in BWD open
+  Why  : g=0.00 + h=5.10 = f=5.10
+  Close: F      (added to BWD closed set)
+  Neighbors of F (BWD):
+    → E     weight=2.00  |  tentative g=0.00+2.00=2.00  h=3.16  f=5.16  ✓ NEW  cameFrom[E]=F
+    → D     weight=3.00  |  tentative g=0.00+3.00=3.00  h=3.61  f=6.61  ✓ NEW  cameFrom[D]=F
+  BWD cameFrom: {E←F, D←F}
+
+
+                  /        4
+               [fB]----------------[bD]
+             Fg=3 f=7            Bg=3 f=7 \
+              /  |                   |         \3             /
+             /   |                   |              \      /
+            /3   |                   |                 [BF]
+          /      |                   |               Bg=0 f=5 \
+         /       |1                  |4             /
+        /        |                   |           /
+     [FA]        |                   |         /2
+   Fg=0 f=5      |                   |      /
+            \2   |                   |    /
+              \  |         5         | /
+               [fC]----------------[bE]
+             Fg=2 f=6            Bg=2 f=5
+                      \
+
+─── step 3 ───────────────────────────────────────────
+  mu=+Inf  meet=  FWD open=2  BWD open=2
+  Direction: ← BWD  (bwd min-f=5.16 < fwd min-f=6.47)
+  Pick : E      f=5.16  ← lowest f in BWD open  (others: D f=6.61)
+  Why  : g=2.00 + h=3.16 = f=5.16
+  Close: E      (added to BWD closed set)
+  Neighbors of E (BWD):
+    → C     weight=5.00  |  tentative g=2.00+5.00=7.00  h=1.41  f=8.41  ✓ NEW  cameFrom[C]=E
+  ★ Meet : C found in both directions!  (NEW BEST)
+           fwdG[C] = A→C(2) = 2.00
+           bwdG[C] = F→E(2) + E→C(5) = 7.00
+           mu = fwdG[C](2.00) + bwdG[C](7.00) = 9.00
+    → D     weight=4.00  |  tentative g=2.00+4.00=6.00  h=3.61  f=9.61  ✗ no improvement (current g=3.00)
+    → F     weight=2.00  [SKIP – already in BWD closed]
+  BWD cameFrom: {E←F, D←F, C←E}
+
+                           \
+                  /        4    \
+               [fB]----------------[bD]
+             Fg=3 f=7            Bg=3 f=7 \
+              /  |                   |         \3
+             /   |                   |              \
+            /3   |                   |                 [BF]
+          /      |                   |               Bg=0 f=5
+         /       |1                  |4             /
+        /        |                   |            /
+     [FA]        |                   |         /2
+   Fg=0 f=5      |                   |       /
+            \2   |                   |    /
+              \  |         5         |  /
+               [MC]----------------[BE]
+             Fg=2 Bg=7           Bg=2 f=5
+                      \         /
+
+─── step 4 ───────────────────────────────────────────
+  mu=9.00  meet=C  FWD open=2  BWD open=2
+  Direction: FWD →  (fwd min-f=6.47 <= bwd min-f=6.61)
+  Pick : C      f=6.47  ← lowest f in FWD open  (others: B f=7.12)
+  Why  : g=2.00 + h=4.47 = f=6.47
+  Close: C      (added to FWD closed set)
+  Neighbors of C (FWD):
+    → B     weight=1.00  |  tentative g=2.00+1.00=3.00  h=4.12  f=7.12  ✗ no improvement (current g=3.00)
+    → E     weight=5.00  |  tentative g=2.00+5.00=7.00  h=2.83  f=9.83  ✓ NEW  cameFrom[E]=C
+  FWD cameFrom: {E←C, B←A, C←A}
+
+
+                  /        4
+               [fB]----------------[bD]
+             Fg=3 f=7            Bg=3 f=7 \
+              /  |                   |         \3             /
+             /   |                   |              \      /
+            /3   |                   |                 [BF]
+          /      |                   |               Bg=0 f=5 \
+         /       |1                  |4             /
+        /        |                   |           /
+     [FA]        |                   |         /2
+   Fg=0 f=5      |                   |      /
+            \2   |                   |    /
+              \  |         5         | /
+               [MC]----------------[ME]
+             Fg=2 Bg=7           Fg=7 Bg=2
+                      \
+
+─── step 5 ───────────────────────────────────────────
+  mu=9.00  meet=C  FWD open=2  BWD open=2
+  Direction: ← BWD  (bwd min-f=6.61 < fwd min-f=7.12)
+  Pick : D      f=6.61  ← lowest f in BWD open  (others: C f=8.41)
+  Why  : g=3.00 + h=3.61 = f=6.61
+  Close: D      (added to BWD closed set)
+  Neighbors of D (BWD):
+    → B     weight=4.00  |  tentative g=3.00+4.00=7.00  h=2.24  f=9.24  ✓ NEW  cameFrom[B]=D
+    → E     weight=4.00  [SKIP – already in BWD closed]
+    → F     weight=3.00  [SKIP – already in BWD closed]
+  BWD cameFrom: {B←D, E←F, D←F, C←E}
+
+
+                  /        4
+               [MB]----------------[BD]
+             Fg=3 Bg=7           Bg=3 f=7 \
+              /  |                   |         \3             /
+             /   |                   |              \      /
+            /3   |                   |                 [BF]
+          /      |                   |               Bg=0 f=5 \
+         /       |1                  |4             /
+        /        |                   |           /
+     [FA]        |                   |         /2
+   Fg=0 f=5      |                   |      /
+            \2   |                   |    /
+              \  |         5         | /
+               [MC]----------------[ME]
+             Fg=2 Bg=7           Fg=7 Bg=2
+                      \
+
+─── step 6 ───────────────────────────────────────────
+  mu=9.00  meet=C  FWD open=2  BWD open=2
+  Direction: FWD →  (fwd min-f=7.12 <= bwd min-f=8.41)
+  Pick : B      f=7.12  ← lowest f in FWD open  (others: E f=9.83)
+  Why  : g=3.00 + h=4.12 = f=7.12
+  Close: B      (added to FWD closed set)
+  Neighbors of B (FWD):
+    → A     weight=3.00  [SKIP – already in FWD closed]
+    → C     weight=1.00  [SKIP – already in FWD closed]
+    → D     weight=4.00  |  tentative g=3.00+4.00=7.00  h=2.24  f=9.24  ✓ NEW  cameFrom[D]=B
+  FWD cameFrom: {B←A, C←A, E←C, D←B}
+
+
+                  /        4
+               [MB]----------------[MD]
+             Fg=3 Bg=7           Fg=7 Bg=3\
+              /  |                   |         \3             /
+             /   |                   |              \      /
+            /3   |                   |                 [BF]
+          /      |                   |               Bg=0 f=5 \
+         /       |1                  |4             /
+        /        |                   |           /
+     [FA]        |                   |         /2
+   Fg=0 f=5      |                   |      /
+            \2   |                   |    /
+              \  |         5         | /
+               [MC]----------------[ME]
+             Fg=2 Bg=7           Fg=7 Bg=2
+                      \
+
+─── step 7 ───────────────────────────────────────────
+  mu=9.00  meet=C  FWD open=2  BWD open=2
+  Direction: ← BWD  (bwd min-f=8.41 < fwd min-f=9.24)
+  Pick : C      f=8.41  ← lowest f in BWD open  (others: B f=9.24)
+  Why  : g=7.00 + h=1.41 = f=8.41
+  Close: C      (added to BWD closed set)
+  Neighbors of C (BWD):
+    → B     weight=1.00  |  tentative g=7.00+1.00=8.00  h=2.24  f=10.24  ✗ no improvement (current g=7.00)
+    → E     weight=5.00  [SKIP – already in BWD closed]
+    → A     weight=2.00  |  tentative g=7.00+2.00=9.00  h=0.00  f=9.00  ✓ NEW  cameFrom[A]=C
+  BWD cameFrom: {E←F, D←F, C←E, B←D, A←C}
+
+
+                  /        4
+               [MB]----------------[MD]
+             Fg=3 Bg=7           Fg=7 Bg=3\
+              /  |                   |         \3             /
+             /   |                   |              \      /
+            /3   |                   |                 [BF]
+          /      |                   |               Bg=0 f=5 \
+         /       |1                  |4             /
+        /        |                   |           /
+     [MA]        |                   |         /2
+   Fg=0 Bg=9     |                   |      /
+            \2   |                   |    /
+              \  |         5         | /
+               [MC]----------------[ME]
+             Fg=2 Bg=7           Fg=7 Bg=2
+                      \
+
+
+─── TERMINATION ─────────────────────────────────────
+  FWD min-f=9.24 >= mu=9.00  AND  BWD min-f=9.00 >= mu=9.00
+  No better path possible. Optimal meeting at: C
+
+  ── Path reconstruction ──
+  Meeting node: C
+
+  Forward half (start → C):
+  FWD cameFrom: map[B:A C:A D:B E:C]
+    [1] cameFrom[C] = A
+    A has no parent → reached start!
+
+  Backward half (C → goal):
+  BWD cameFrom: map[A:C B:D C:E D:F E:F]
+    [1] cameFrom[C] = E
+    [2] cameFrom[E] = F
+    F has no parent → reached goal!
+
+  Full path: A → C → E → F
+  Total cost: 9.00
+
+
+                           4
+               [MB]----------------[MD]
+             Fg=3 Bg=7           Fg=7 Bg=3\
+               / |                   |         \3             *
+              /  |                   |              \      *
+            /3   |                   |                 [#F]
+           /     |                   |               Bg=0 f=5 \
+          /      |1                  |4             *
+         /       |                   |           *
+     [#A]        |                   |         *2
+   Fg=0 Bg=9     |                   |      *
+            *2   |                   |    *
+              *  |         5         | *
+               [#C]================[#E]
+             Fg=2 Bg=7           Fg=7 Bg=2
+                      *
+========================================
