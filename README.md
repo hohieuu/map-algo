@@ -241,90 +241,102 @@ Students usually stop here and ask two questions:
 
 Both answers are pure pointer arithmetic. No joins, no indexes, no graph traversal.
 
-#### Model
+#### Model: one OSM way = one pair of DirectedEdges
 
-Define an OSM way $W$. Valhalla stores it as an **ordered pair** of DirectedEdge records:
+```
+OSM way W  ────►  ( e+ , e- )          (ordered pair of DirectedEdge records)
+```
 
-$$W \;\longmapsto\; (e^{+}, e^{-})$$
+Three hard invariants tie the pair together:
 
-with three hard invariants:
+```
+(1)   e+.endnode            =  e-.startnode
+(2)   e-.endnode            =  e+.startnode
+(3)   e+.edge_info_offset   =  e-.edge_info_offset
+```
 
-$$
-\begin{aligned}
-e^{+}.\text{endnode} &= e^{-}.\text{startnode} \\
-e^{-}.\text{endnode} &= e^{+}.\text{startnode} \\
-e^{+}.\text{edge\_info\_offset} &= e^{-}.\text{edge\_info\_offset}
-\end{aligned}
-$$
+What each line means:
 
-Meaning: a DirectedEdge only stores its **end** node. To get the **start** node you go through the twin. And the human-readable payload (names, shape, way_id, speed_limit) lives **once** in `EdgeInfo[]` - both halves point to the same offset, so "Hẻm 16 Đinh Tiên Hoàng" is never duplicated.
+- **(1) + (2)** — a DirectedEdge only stores its *end* node. To get the *start* node, you go through the twin. Start of `e+` = end of `e-`, and vice-versa.
+- **(3)** — the human-readable payload (names, shape, way_id, speed_limit) lives *once* in the `EdgeInfo[]` array. Both halves point to the same offset, so "Hẻm 16 Đinh Tiên Hoàng" is never duplicated on disk.
 
-**Twin lookup in one expression:**
+**Twin lookup is one line of arithmetic:**
 
-$$\text{twin}(e) \;=\; \text{edges}\bigl[\, e.\text{endnode}.\text{edge\_index} + e.\text{opp\_index} \,\bigr]$$
+```
+twin(e)  =  edges[ e.endnode.edge_index  +  e.opp_index ]
+                   │                        │
+                   │                        └─ "my slot within my endnode's outgoing list"
+                   └─ "first outgoing edge of my endnode"
+```
 
 Three field reads. That is the whole operation.
 
 #### Live proof: the alley at 28bis
 
-From our `/locate` response on way `605149488`:
+`/locate` on way `605149488` returned two DirectedEdge records - the twin pair:
 
-$$
-\begin{array}{lcl}
-e^{+} &=& \text{edge 83734},\; \text{forward}=\text{true},\; \text{endnode}=39958,\; \text{live}=16\text{ km/h} \\
-e^{-} &=& \text{edge 83729},\; \text{forward}=\text{false},\; \text{endnode}=39959,\; \text{live}=20\text{ km/h}
-\end{array}
-$$
+```
+e+  =  edge 83734   forward=true    endnode = 39958   live = 16 km/h
+e-  =  edge 83729   forward=false   endnode = 39959   live = 20 km/h
+```
 
-Apply the invariants:
+Apply invariants (1) and (2):
 
-$$
-\text{start}(e^{+}) = e^{-}.\text{endnode} = 39959
-\qquad
-\text{start}(e^{-}) = e^{+}.\text{endnode} = 39958
-$$
+```
+start(e+)  =  e-.endnode  =  39959
+start(e-)  =  e+.endnode  =  39958
+```
 
-So the forward half runs $39959 \to 39958$ and the reverse runs $39958 \to 39959$. Same 40 m of asphalt, two independent records. Notice the two halves carry **different** live speeds (16 vs 20) - entering the alley and leaving it are separate traffic measurements, which is exactly why Valhalla splits them.
+So the same 40 m of asphalt is stored as two independent records:
+
+```
+        forward (e+, id=83734, live=16)
+   39959 ───────────────────────────────► 39958
+   39958 ◄─────────────────────────────── 39959
+        reverse (e-, id=83729, live=20)
+```
+
+Two different live speeds (16 vs 20) because entering the alley and leaving it are separate traffic measurements. That is exactly why Valhalla splits them - the graph carries direction-specific state without any `if (direction == ...)` branch in the routing code.
 
 #### Node discovery (Q2)
 
-A `NodeInfo` record carries two scalars:
+Every `NodeInfo` record stores two tiny scalars that do all the work:
 
-$$
-N.\text{edge\_index} = \text{first outgoing edge id in this tile} \quad
-N.\text{edge\_count} = k \;\text{outgoing edges (same tile, same level)}
-$$
+```
+N.edge_index  =  first outgoing edge id in this tile
+N.edge_count  =  k  (how many outgoing edges, same tile + same level)
+```
 
-All outgoing edges of $N$ are **contiguous in memory**:
+All outgoing edges of N live **contiguously in memory**:
 
-$$
-\text{Out}(N) \;=\; \bigl\{\, \text{edges}[\, N.\text{edge\_index} + j\,] \;:\; 0 \le j < k \,\bigr\}
-$$
+```
+Out(N)  =  { edges[N.edge_index + j]   for j = 0, 1, ..., k-1 }
+```
 
-The neighbors of $N$ fall out immediately:
+Neighbors drop out for free:
 
-$$
-\text{Neighbors}(N) \;=\; \bigl\{\, e.\text{endnode} \;:\; e \in \text{Out}(N) \,\bigr\}
-$$
+```
+Neighbors(N)  =  { e.endnode   for e in Out(N) }
+```
 
-Cost of listing all neighbors of a node = $k$ struct reads. No traversal, no hash lookup.
+Cost of listing every neighbor of a node = **k struct reads**. No traversal, no hash map, no lookup table.
 
 #### Live proof: node 40041 in tile 581466
 
-`/locate` at `(10.7889, 106.69996)` with `node_snap_tolerance=30` snapped to a real intersection and returned:
+`/locate` at `(10.7889, 106.69996)` with `node_snap_tolerance = 30` snapped to a real intersection:
 
 ```
-NODE          value = 1,343,557,663,442   → level=2, tile=581466, id=40041
-POSITION      (10.788928, 106.700024)
-type          street_intersection     intersection_type = regular
-local_edge_count = 3                  ← |Out(N)| at this level
-transition_count = 1                  ← 1 upward link (L2 → L1 copy of this node)
-density       = 15                    ← ~15 edges/km² neighbourhood
-traffic_signal = false
-drive_on_right = false                ← ⚠ surprising for HCMC, flagged in §11
+NODE              value = 1,343,557,663,442   →  level=2, tile=581466, id=40041
+POSITION          (10.788928, 106.700024)
+type              street_intersection          intersection_type = regular
+local_edge_count  = 3                          ← |Out(N)| at this level
+transition_count  = 1                          ← 1 upward link (L2 → L1 copy of this node)
+density           = 15                         ← ~15 edges/km² neighbourhood
+traffic_signal    = false
+drive_on_right    = false                      ← ⚠ surprising for HCMC, flagged in §11
 ```
 
-The three edges incident to node 40041 (the four rows below are two twins on Hẻm 21 plus two forward halves on Nguyễn Đình Chiểu - picked up by the locate's wider radius):
+Edges that the same `/locate` call returned near node 40041 (two twins on Hẻm 21 plus two Nguyễn Đình Chiểu halves picked up by the wider radius):
 
 | edge id | way | name | forward | endnode | len |
 |---:|---:|---|:-:|---:|---:|
@@ -335,36 +347,45 @@ The three edges incident to node 40041 (the four rows below are two twins on H�
 
 Reading this like a student:
 
-- Edge **83961** has `endnode = 40041` - it flows **into** our node. Its twin, edge 83903, flows **out** of 40041 toward node 40070. So from 40041 you can reach 40070 down the alley.
-- Edges **87660** and **90663** both run along Nguyễn Đình Chiểu, the cross street. Their endpoints (39617 and 39636) are the two adjacent intersections on that road, ~70 m and ~27 m away.
+- Edge **83961** has `endnode = 40041` — it flows *into* our node. Its twin, edge 83903, flows *out* of 40041 toward node 40070. So from 40041 you can reach 40070 down the alley.
+- Edges **87660** and **90663** run along Nguyễn Đình Chiểu, the cross street. Their endpoints 39617 and 39636 are the two adjacent intersections on that road, ~70 m and ~27 m away.
 
-Putting it as a set:
+Put as a set:
 
-$$
-\text{Neighbors}(40041) \;=\; \{\, 40070,\; 39617,\; 39636 \,\} \qquad \text{(3 nodes, matches } \texttt{local\_edge\_count}=3\text{)}
-$$
+```
+Neighbors(40041)  =  { 40070,  39617,  39636 }       (3 nodes, matches local_edge_count = 3)
+```
 
-#### Putting it together: the A* inner loop, as math
+Pictorially:
 
-Given current node $N$ and goal $G$, the step Valhalla executes at each pop of the open set is:
+```
+            39617  (Nguyễn Đình Chiểu, 70 m west)
+                ▲
+                │
+                │
+   40070 ◄──────40041──────► 39636  (Nguyễn Đình Chiểu, 27 m east)
+   (alley        │
+   continues     │
+   south)        ▼
+            Hẻm 21
+```
 
-$$
-\text{for } e \in \text{Out}(N): \quad
-\begin{cases}
-N' \;=\; e.\text{endnode} \\[2pt]
-g'  \;=\; g(N) + \text{edge\_cost}(e) \\[2pt]
-f'  \;=\; g' + h(N', G) \\[2pt]
-\text{push } (N', f') \text{ on open set}
-\end{cases}
-$$
+#### Putting it together: the A* inner loop, in plain terms
 
-If $e$ crosses a tile boundary, one extra step:
+Given current node `N` and goal `G`, every pop of the open set does this:
 
-$$
-\text{GetGraphTile}(N'.\text{tile\_id},\, N'.\text{level}) \;=\; \text{mmap}\bigl(\text{tile path}(N')\bigr)
-$$
+```
+for each e in Out(N):
+    N'  =  e.endnode                          ← 1 field read
+    g'  =  g[N] + edge_cost(e)                ← arithmetic
+    f'  =  g' + h(N', G)                      ← heuristic call
+    push (N', f') onto open set               ← heap push
 
-That is it. No string parsing, no DB query, no allocation per step. **A forward scan across `edges[edge_index .. edge_index + edge_count]`, a field read for `endnode`, arithmetic for $f$ and $g$, done.** This is why a 2 km city route can settle tens of thousands of nodes in under 30 ms - every node expansion is a handful of L1 cache lines.
+If e crosses a tile boundary:
+    tile = GetGraphTile(N'.tile_id, N'.level) ← O(1) hash; mmap if not cached
+```
+
+That is it. No string parsing, no database query, no allocation per step. **A forward scan across `edges[edge_index .. edge_index + edge_count]`, a field read for `endnode`, arithmetic for g and f, done.** This is why a 2 km city route can settle tens of thousands of nodes in under 30 ms — every node expansion is a handful of L1 cache lines.
 
 ### Concrete evidence from debug log
 
