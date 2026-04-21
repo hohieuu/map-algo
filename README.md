@@ -67,7 +67,7 @@ GraphTileHeader → NodeInfo[] → DirectedEdge[] → EdgeInfo[] → Signs → R
 
 You `mmap` the file, cast pointers to structs, and index by offset. **Zero parsing cost** - this is how Valhalla loads Earth-scale data in milliseconds. The `mmap` approach also means multiple worker processes on the same machine share the same physical memory pages: the OS pays for the map once, every worker gets zero-copy access.
 
-### Concrete evidence from our own debug log
+### Concrete evidence from debug log
 
 A single short route (9.84 km Hanoi inner-city) touched 7 tiles:
 
@@ -227,7 +227,7 @@ In Image #4: C is the first meeting node with `mu = 2+7 = 9`. The diagram then s
 
 **Note:** textbook bidirectional A\* stops at first meeting. Valhalla keeps searching a configurable `threshold_delta` past it - this is why `/expansion` output sometimes shows edges being explored after a visible meet. It is not a bug; it compensates for the heuristic losing admissibility across shortcut boundaries.
 
-#### Hanoi concrete trace (from our own log)
+#### Hanoi concrete trace (from log)
 
 From `debug.txt`, for a 9.84 km Hanoi route:
 
@@ -457,53 +457,81 @@ Two separate numbers live on every edge and path:
 
 They are deliberately different. If cost were equal to time, the router would always pick the fastest path even if it involved 40 turns through alleyways, private gates, and a toll road - all things users hate. Adding penalties to `cost` lets us tune *preferences* without lying about the ETA.
 
-#### The formula
+#### The formula (Công thức tính toán)
 
-Total path cost is the sum of **two things per edge**:
+> **Note:** Every piece of information below directly impacts how the routing algorithm picks the best path. 
 
-```
+Total path cost is the sum of **two things per edge** 
+The relationship between them is sequential: you travel *along* a road (`edge_cost`), then you turn/transition *onto* the next road (`transition_cost`).
+
+```text
 path_cost = Σ (edge_cost_i + transition_cost_i)
 path_time = Σ (edge_secs_i + transition_secs_i)
+
+(Tổng chi phí = Σ (Chi phí đoạn đường_i + Chi phí chuyển hướng_i))
+(Tổng thời gian = Σ (Thời gian đi đoạn đường_i + Thời gian chuyển hướng_i))
 ```
 
-Where for each edge:
+Where for each edge (Chi tiết cho từng đoạn đường):
 
-```
-edge_cost  = (secs × density_factor × road_class_factor × surface_factor
-              × speed_penalty × toll_factor × alley_factor …)
+```text
+edge_cost  = (secs × density_factor × highway_factor × surface_factor
+              × speed_penalty × toll_factor × alley_factor
+              × track_factor × living_street_factor × service_factor
+              × turn_channel_factor × edge_factor × closure_factor)
              + any_edge_level_penalty
 edge_secs  = length / speed
+
+(Chi phí đoạn đường = (Thời gian đi × Hệ số mật độ × Hệ số đường cao tốc × Hệ số mặt đường
+                       × Phạt tốc độ × Hệ số trạm thu phí × Hệ số ngõ hẻm
+                       × Hệ số đường mòn × Hệ số đường khu dân cư × Hệ số đường nội bộ
+                       × Hệ số làn rẽ × Hệ số đoạn đường × Hệ số đường bị đóng)
+                      + Các hình phạt phụ thêm trên đoạn đường này)
+(Thời gian đi = Chiều dài / Tốc độ)
 ```
 
-And for each node transition (turn from one edge onto the next):
+And for each node transition (turn from one edge onto the next) (Chi tiết cho mỗi lần chuyển hướng - rẽ từ đường này sang đường khác):
 
+```text
+transition_cost = turn_penalty[angle]         // sharp turns cost more (Góc rẽ càng gắt càng tốn chi phí)
+                + maneuver_penalty            // baseline for any turn (Chi phí cơ bản cho mọi cú rẽ)
+                + gate_cost + gate_penalty    // passing a gate (Khi đi qua cổng)
+                + toll_booth_cost             // passing a toll booth (Khi đi qua trạm thu phí)
+                + country_crossing_cost       // border crossing (Khi qua cửa khẩu/biên giới)
+                + ferry_cost                  // taking a ferry (Khi đi phà)
+                + rail_ferry_cost             // taking a rail ferry (Khi đi phà đường sắt)
+                + private_access_cost         // private access gates/bollards (Khi qua cổng tư nhân)
+                + bike_share_cost             // bike share stations (Khi qua trạm xe đạp công cộng)
+                + destination_only_penalty    // destination only roads (Phạt đi vào đường chỉ dành cho dân cư)
+                + alley_penalty               // entering an alley (Phạt đi vào ngõ hẻm)
+                + living_street_penalty       // entering a living street (Phạt đi vào đường khu dân cư)
+                + track_penalty               // entering a track (Phạt đi vào đường mòn)
+                + service_penalty             // entering a service road (Phạt đi vào đường nội bộ/dịch vụ)
+                + stop_impact                 // penalty for crossing a busier road (Phạt dừng xe khi cắt ngang đường đông đúc hơn)
+transition_secs = the actual seconds lost (usually a subset of the above) (Số giây thực tế bị mất, thường là một phần của các chi phí trên)
 ```
-transition_cost = turn_penalty[angle]        // sharp turns cost more
-                + maneuver_penalty            // baseline for any turn
-                + gate_cost, toll_cost, …     // if you pass through one
-                + stop_impact                 // penalty for crossing a busier road
-transition_secs = the actual seconds lost (usually a subset of the above)
-```
+> **Q: What if a feature like a bike share station, gate, or toll booth is in the middle of a road?**
+> A: In the routing graph, roads are explicitly split at these features. A feature in the middle of a road becomes a "node" connecting two shorter edges. Therefore, you only ever pay these costs at the nodes (transitions), never in the middle of an edge.
 
-References: [`src/sif/autocost.cc#L938-L1008`](https://github.com/valhalla/valhalla/blob/master/src/sif/autocost.cc) (EdgeCost), [`src/sif/autocost.cc#L1010-L1099`](https://github.com/valhalla/valhalla/blob/master/src/sif/autocost.cc) (TransitionCost), [`valhalla/sif/dynamiccost.h`](https://github.com/valhalla/valhalla/blob/master/valhalla/sif/dynamiccost.h) (penalty constants).
+References (Tài liệu tham khảo): [`src/sif/autocost.cc#L938-L1008`](https://github.com/valhalla/valhalla/blob/master/src/sif/autocost.cc) (EdgeCost), [`src/sif/autocost.cc#L1010-L1099`](https://github.com/valhalla/valhalla/blob/master/src/sif/autocost.cc) (TransitionCost), [`valhalla/sif/dynamiccost.h`](https://github.com/valhalla/valhalla/blob/master/valhalla/sif/dynamiccost.h) (penalty constants - các hằng số phạt).
 
 #### Default penalties for `auto` costing
 
 The values our production service sends in the Loki request:
 
-| Penalty | Value | When it applies |
-|---------|-------|-----------------|
-| `maneuver_penalty` | 5 | Any non-trivial turn (per edge transition) |
-| `gate_cost` | 30 s | Passing a gate, adds to both cost and time |
-| `gate_penalty` | 300 | Extra cost on gates (not added to time) |
-| `toll_booth_cost` | 15 s | Passing a toll booth |
-| `alley_penalty` | 5 | Any edge flagged as an alley |
-| `country_crossing_cost` | 600 s | Border crossing |
-| `ferry_cost` | 300 s | Taking a ferry |
-| `service_penalty` | 75 | Service roads (parking-lot paths etc.) |
-| `private_access_penalty` | 450 | Private roads |
-| `destination_only_penalty` | 600 | "Residents only" streets |
-| `closure_factor` | 9 | Multiplier for closures - route through only if no alternative |
+| Penalty | Value | When it applies | Giải thích (Vietnamese) |
+|---------|-------|-----------------|-------------------------|
+| `maneuver_penalty` | 5 | Any non-trivial turn (per edge transition) | Phạt thao tác rẽ (áp dụng cho mọi ngã rẽ đáng kể) |
+| `gate_cost` | 30 s | Passing a gate, adds to both cost and time | Thời gian qua cổng (cộng vào cả chi phí và thời gian) |
+| `gate_penalty` | 300 | Extra cost on gates (not added to time) | Điểm phạt thêm khi qua cổng (chỉ tăng chi phí, không tăng thời gian) |
+| `toll_booth_cost` | 15 s | Passing a toll booth | Thời gian qua trạm thu phí |
+| `alley_penalty` | 5 | Any edge flagged as an alley | Phạt đi vào ngõ hẻm |
+| `country_crossing_cost` | 600 s | Border crossing | Thời gian qua cửa khẩu/biên giới |
+| `ferry_cost` | 300 s | Taking a ferry | Thời gian đi phà |
+| `service_penalty` | 75 | Service roads (parking-lot paths etc.) | Phạt đi vào đường nội bộ/dịch vụ (ví dụ: bãi đỗ xe) |
+| `private_access_penalty` | 450 | Private roads | Phạt đi vào đường tư nhân |
+| `destination_only_penalty` | 600 | "Residents only" streets | Phạt đi vào đường chỉ dành cho dân cư khu vực đó |
+| `closure_factor` | 9 | Multiplier for closures - route through only if no alternative | Hệ số nhân khi đường bị đóng (chỉ đi qua nếu không còn đường nào khác) |
 
 Reading these, you can see the design: the router will gladly add a minute to your ETA to avoid a toll-booth waste-of-time, skip a "residents only" cut-through, or detour around a closed road.
 
@@ -1104,7 +1132,7 @@ Valhalla uses **Dynamic Costing** - costs are evaluated at search time using the
 - **Tesla FSD v14:** on-device routing uses Valhalla tiles because the three-level hierarchy fits in car memory and `mmap` keeps it cheap.
 - **Uber:** built their own routing (Gurafu) but adopted Valhalla's tiled model as inspiration.
 
-The decisive factors for our own selection were the same: mobile and edge-friendly footprint, runtime flexibility, and live-traffic overlay without rebuilding.
+The decisive factors for selection were the same: mobile and edge-friendly footprint, runtime flexibility, and live-traffic overlay without rebuilding.
 
 ---
 
@@ -1307,7 +1335,7 @@ None of the ranges above can be collapsed to a point value without the following
 
 | Signal | Purpose | Source | Unblocks |
 |--------|---------|--------|----------|
-| GPS-error distribution by district (HCM 1/3/5/7/Bình Thạnh, HN Hoàn Kiếm/Cầu Giấy/Ba Đình/…) | Pick `radius` and `node_snap_tolerance` point values | Our own rider/driver traces, grouped by urban density class | `loki.default_radius`, `node_snap_tolerance` |
+| GPS-error distribution by district (HCM 1/3/5/7/Bình Thạnh, HN Hoàn Kiếm/Cầu Giấy/Ba Đình/…) | Pick `radius` and `node_snap_tolerance` point values | rider/driver traces, grouped by urban density class | `loki.default_radius`, `node_snap_tolerance` |
 | Intersection-delay histogram by turn type (straight / right / left / U-turn) at top-100 HCM/HN intersections, peak vs off-peak | Validate or invalidate the 2.5× left-turn cost and inform `maneuver_penalty` | Trace inference: time between last traversal on approach edge and first traversal on departure edge, filtered to through-traffic | `maneuver_penalty` magnitude; justification for forking turn-cost arrays |
 | Alley vs through-road speed delta (hẻm / ngõ average speed vs adjacent residential mean) | Validate `alley_penalty` magnitude | Trace speed samples on edges tagged `highway=service` with alley attribution | `alley_penalty` point value |
 | Ferry-edge actual usage (which VN ferry edges see real driver traffic vs which are OSM-tagged but rarely used) | Separate "major river crossings" from "Mekong small craft" | Trace snaps on edges tagged `route=ferry` | `use_ferry` point value and potential per-edge exclusion list |
