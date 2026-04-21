@@ -1,9 +1,5 @@
 # Valhalla Under The Hood - From Tile Bytes to Live Traffic
 
-**Scope:** Engineering reference describing how the Valhalla routing engine operates end-to-end in our production deployment, with direct links to the corresponding source code on `github.com/valhalla/valhalla` (master branch).
-**Audience:** Engineering, MapOps, Data, Product.
-**Methodology:** Every technical claim in this document cites a specific file and line number in the open-source repository. Performance numbers and log excerpts are sourced from our production debug traces on Hanoi ↔ HCMC routes.
-
 ---
 
 ## 0. Executive summary
@@ -36,15 +32,28 @@ TileLevel{1, stringToRoadClass("Tertiary"),     "arterial", Tiles{..., 1}},
 TileLevel{2, stringToRoadClass("ServiceOther"), "local",    Tiles{..., .25}},
 ```
 
-**Common myth to correct:** "13 L0 tiles, 63 L1, 658 L2." Those are our **Vietnam extract**, not the globe. Globally there are roughly 4,050 L0, 64,800 L1, and 1M L2 (the math is just `360°/tile_size × 180°/tile_size`). Do not quote the small numbers externally without saying "our region."
+**Common myth to correct:** "13 L0 tiles, 63 L1, 658 L2." Those are our **Vietnam extract**, not the globe. The Earth is 180° tall (latitude) and 360° wide (longitude). The math calculates the total grid cells for the entire planet:
+
+- **L0 (4° tiles):** (180 / 4) × (360 / 4) = 45 × 90 = 4,050 tiles
+- **L1 (1° tiles):** (180 / 1) × (360 / 1) = 180 × 360 = 64,800 tiles
+- **L2 (0.25° tiles):** (180 / 0.25) × (360 / 0.25) = 720 × 1,440 = 1,036,800 tiles (~1M)
 
 ### Why three levels exist
 
-It is not taxonomy. It is a **search-pruning optimisation**.
+This isn't just about organizing data into categories. It is a **speed trick** to help the routing engine calculate directions much faster by ignoring small roads when they aren't needed.
+
+They are **Tile Levels** based on road importance.
+*   **Level 0 (L0):** Highways and major inter-city roads.
+*   **Level 1 (L1):** Arterial roads (main city streets).
+*   **Level 2 (L2):** Local roads (alleys, neighborhood streets).
+
+**Example: District 1 to Tan Binh (Ho Chi Minh City)**
+*   **Without levels (Flat Map):** The routing algorithm acts like water spilling out from District 1. It has to explore *every single tiny alley (hẻm)*, dead-end, and neighborhood street between Q1 and Tan Binh just to find the way. This wastes massive CPU power and time.
+*   **With 3 levels:** The algorithm starts in the alleys of Q1 (Level 2). Once it finds a main road like Cach Mang Thang 8 or Nam Ky Khoi Nghia (Level 1), it "promotes" to Level 1. From that point on, it completely **ignores** all the thousands of tiny alleys along the way. It only drops back down to Level 2 when it gets very close to the destination in Tan Binh.
 
 - Near origin and destination we need every alley, so we search Level 2.
 - In the middle of a 1,700 km ride we do not care about alleys, so we jump to Level 0 and ignore the rest.
-- Level 0 has **shortcut edges** - virtual edges that collapse long chains of highway nodes into a single "teleport" so A\* has fewer branches to explore.
+- **Level 0 and Level 1 both have "shortcut edges".** These are virtual edges that collapse long chains of roads into a single "teleport" so the algorithm has fewer intersections to check. Level 2 (alleys) does not have shortcuts, because you only use alleys for the short first and last mile of a trip.
 
 **Analogy for product people:** Think of Google search. When you type a query, Google does not scan every webpage - it hits an index that already collapsed 100 similar pages into one entry. L0 shortcuts are that index, for highways.
 
@@ -272,6 +281,8 @@ Implementation lives in [`src/thor/bidirectional_astar.cc`](https://github.com/v
 
 This is how we route Hanoi → HCMC (~1,653 km) in under a second.
 
+> **Scope of this section.** Everything below describes **bidirectional** A\*. Unidirectional A\* (the algorithm used for time-dependent `/route` requests - `depart_at` / `arrive_by`) reuses the **hierarchy** machinery (level pruning and transition counting) but **skips shortcut edges entirely** (shortcut usage and shortcut recovery do not apply). See [§4.3b](#43b-what-carries-over-to-unidirectional-a-time-dependent-routing) for the precise overlap and its performance consequences.
+
 Bidirectional alone would still explore too many side streets mid-country. The hierarchical tricks, in order:
 
 #### Trick 1 - Promote up, never down (usually)
@@ -353,6 +364,36 @@ Also notice: the long route touches 9 L0 tiles versus 1 for the short route. Tha
 
 ---
 
+### 4.3b What carries over to unidirectional A\* (time-dependent routing)
+
+Time-dependent `/route` calls (`date_time_type = depart_at` or `arrive_by`) run on `UnidirectionalAStar`, not the bidirectional algorithm described above. The overlap with §4.3 is partial, and the differences matter for ETA accuracy and latency.
+
+| Hierarchical mechanism | Bidirectional (§4.3) | Unidirectional (time-dependent) | Evidence |
+|------------------------|----------------------|----------------------------------|----------|
+| `StopExpanding` pruning by `max_up_transitions` + `expand_within_dist` | Applied | **Applied** (same code path) | [`src/thor/unidirectional_astar.cc#L121`](https://github.com/valhalla/valhalla/blob/master/src/thor/unidirectional_astar.cc#L121), limits read at [`#L654`](https://github.com/valhalla/valhalla/blob/master/src/thor/unidirectional_astar.cc#L654) |
+| Up-transition counting between tile levels | Applied | **Applied** | [`src/thor/unidirectional_astar.cc#L126-L127`](https://github.com/valhalla/valhalla/blob/master/src/thor/unidirectional_astar.cc#L126-L127) |
+| `expand_within_dist` values | L1 = 20 km, L2 = 5 km | **L1 = 100 km**, L2 = 5 km | [`scripts/valhalla_build_config#L254`](https://github.com/valhalla/valhalla/blob/master/scripts/valhalla_build_config) vs [`#L245`](https://github.com/valhalla/valhalla/blob/master/scripts/valhalla_build_config) |
+| Shortcut edges | Used - 50-100 km hops on L0 | **Not used** - shortcut edges are filtered out at the start of expansion | [`src/thor/unidirectional_astar.cc#L177-L181`](https://github.com/valhalla/valhalla/blob/master/src/thor/unidirectional_astar.cc#L177-L181) - literal `if (meta.edge->is_shortcut()) return false;` with the comment `// Skip shortcut edges for time dependent routes` (the upstream TODO asks "why?" but the behaviour is unconditional) |
+| `RecoverShortcut()` pre-narration step | Required | **Not required** - no shortcut edges are ever on the path, so Odin sees the real edges directly | Follows from the previous row |
+
+**Why unidirectional skips shortcuts.** A shortcut edge stores its weight as a single precomputed traversal cost, but a time-dependent cost depends on the moment of traversal of **every component edge** of the shortcut. Evaluating a shortcut as a single edge would force a single `seconds_from_now` value to stand in for the entire chain, which is wrong for any non-constant live or predicted speed profile. The safe option is to never consider shortcuts when time dependency is on - which is exactly what the code does. (The upstream TODO invites a future optimisation that expands the shortcut, prices each underlying edge with its own time offset, and reassembles - but that optimisation has not been implemented.)
+
+**Performance consequences.**
+
+1. **Long-route cost is linear in real edges.** Without L0 shortcuts, a 1,500 km time-dependent route must traverse every intermediate highway node individually. Labels-explored scales with the number of real edges, not with the number of shortcut hops - the "60 labels per path edge" headline in §4.3 is a bidirectional achievement that unidirectional cannot match.
+2. **The 100 km vs 20 km L1 zone partially compensates.** Unidirectional keeps arterial detail (L1) for 100 km out from the origin, while bidirectional only keeps it for 20 km before meeting the reverse frontier. This gives unidirectional a better chance at finding a good arterial route when it can no longer use highway shortcuts.
+3. **This is the second reason time-dependent routing is slower.** §4.5 explains the first reason (losing the bidirectional 2× speed-up because reverse has no knowledge of arrival time). The shortcut skip is a separate, additive cost on long routes.
+
+**Under-500 km production request shape.** Our production team always sends `date_time.type = 1` (current). A request under 500 km beeline goes through `timedep_forward` (unidirectional) - it therefore:
+
+- Uses hierarchy (L1 opens at 5 km, L0 opens at 100 km).
+- Does **not** use shortcut edges.
+- Keeps arterial detail longer than bidirectional would.
+
+See §5.12 for the full algorithm-selection reference and §11.1 for how this interacts with Vietnam-urban tuning.
+
+---
+
 ### 4.4 The A\* Cost Factor - Why admissibility is global, not per-tile
 
 The heuristic needs a scalar to convert "metres remaining" into "seconds remaining." That scalar is `AStarCostFactor()`:
@@ -393,7 +434,9 @@ arrival_time(e) = depart_time + time_to_reach(e)    ← what we are trying to so
 
 Reverse cannot resolve this without assuming the final time, which defeats the purpose. So Thor silently picks unidirectional when `date_time_type ∈ {2: depart_at, 3: arrive_by}`.
 
-**Side effect:** a time-dependent query loses the 2× speed-up from bidirectional. Expect 2–3× slower latency for routes with `depart_at` set. See the matrix comparison in §7 for the practical cost.
+**Side effect 1 - no bidirectional:** a time-dependent query loses the 2× speed-up from bidirectional. Unidirectional is ~2× slower on the same network just from not having two converging frontiers.
+
+**Side effect 2 - no shortcuts:** unidirectional also skips shortcut edges entirely ([§4.3b](#43b-what-carries-over-to-unidirectional-a-time-dependent-routing)). On long routes this compounds: every highway node is a distinct label rather than being collapsed into a 50-100 km shortcut hop. Expect 2-3× slower latency on short/medium routes and a larger slowdown on intercity routes where shortcuts would have been doing the most work. See the matrix comparison in §7 for the practical cost.
 
 ---
 
