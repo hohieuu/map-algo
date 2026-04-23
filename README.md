@@ -14,6 +14,12 @@ A concrete exposure analysis for our production request shape is provided in §5
 
 ---
 
+## Architecture Modules
+
+![Architecture Modules](diagrams/Traffic%20Data%20Pathfinding-2026-04-23-003610.png)
+
+---
+
 ## 1. The Map Is a Three-Layer Filing Cabinet
 
 Valhalla does not store "a road network." It stores **three separate road networks, stacked**.
@@ -1075,14 +1081,26 @@ float live_traffic_multiplier =
 
 **Rule:** any edge the router expects to reach more than 60 minutes from `now` receives zero live-traffic influence. Speed is then purely historical or predicted. One compile-time constant (`1/3600`) governs this. Changing it has admissibility implications, as it biases `h(n)` indirectly via the cost surface.
 
-### 5.8 What counts as "historical speed"?
+### 5.8 What counts as "historical speed"? (The Fallback Layers)
+
+When there is no live traffic and no historical (predicted) traffic profile, Valhalla falls back to pre-calculated data baked directly into the binary `.gph` tiles during the graph-building process. The logic for when to use this data is hardcoded into the source code.
 
 [valhalla/baldr/graphtile.h#L857-L876](https://github.com/valhalla/valhalla/blob/master/valhalla/baldr/graphtile.h#L857-L876). Priority order:
 
 1. **Predicted speed** - if `has_predicted_speed()` is true and a time-of-week was passed, use the predicted profile for that hour-of-week.
-2. **Constrained flow** - 7am–7pm bucket, otherwise:
-3. **Free flow** - 7pm–7am bucket.
-4. **Base speed** on the `DirectedEdge` itself - baked from OSM `maxspeed` at tile-build time.
+2. **Fallback Layer 1: Constrained Flow (Daytime)**
+   - **Source:** Data baked into the `DirectedEdge` record (`de->constrained_flow_speed()`).
+   - **Logic:** The system hardcodes daytime as between 7 AM (25200 seconds) and 7 PM (68400 seconds). If it's daytime and the edge has a valid constrained flow speed, it uses this value.
+3. **Fallback Layer 2: Free Flow (Nighttime)**
+   - **Source:** Data baked into the `DirectedEdge` record (`de->free_flow_speed()`).
+   - **Logic:** If it's nighttime (outside 7 AM - 7 PM) and the edge has a valid free flow speed, it uses this value. This usually represents the speed when there is no traffic.
+4. **Fallback Layer 3: Base Speed (The Floor)**
+   - **Source:** OSM Defaults baked into the Tile (`de->speed()`).
+   - **Logic:** This is the absolute base speed. If using OpenStreetMap data, this is derived from the `maxspeed` tag. If the tag was missing during the build, it uses a default based on the road classification (e.g., `highway=motorway`).
+
+**How to control this:**
+- The **fallback data** itself is controlled during the **graph-building process** (tile generation). You must configure the builder (e.g., lua profiles or config files used during `valhalla_build_tiles`) to adjust the default speeds for different road classes or update the OSM data with accurate `maxspeed` tags.
+- The **logic** (e.g., 7 AM to 7 PM daytime window) is **hardcoded** in the C++ source code. To change these thresholds, you would need to modify the source code and recompile Valhalla.
 
 ### 5.9 Gotchas
 

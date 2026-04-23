@@ -1,0 +1,50 @@
+---
+config:
+  layout: dagre
+---
+graph TD
+    classDef service fill:#d1e7ff,stroke:#004a99,stroke-width:2px;
+    classDef core fill:#fff2cc,stroke:#d4a017,stroke-width:2px;
+    classDef data fill:#d4edda,stroke:#155724,stroke-width:2px;
+    classDef traffic fill:#f8d7da,stroke:#721c24,stroke-width:2px;
+
+    User((User)) == <b>JSON Request</b> ==> Tyr
+
+    subgraph Service_Layer [Service Layer: Request Orchestration]
+        Tyr[<b>Tyr</b><br/>REST API & Formatter]
+        Loki[<b>Loki</b><br/>Search & Map Matching]
+        Thor[<b>Thor</b><br/>Path Finding / Graph Search]
+        Odin[<b>Odin</b><br/>Narrative & Guidance]
+        Meili[<b>Meili</b><br/>Map Matching / Snap-to-Road]
+    end
+
+    subgraph Core_Library [Core Libraries: The Internal Contract]
+        Sif[<b>Sif</b><br/>Costing & Speed Models]
+        Balder[<b>Balder</b><br/>Graph Data Access]
+        Skadi[<b>Skadi</b><br/>Elevation / SRTM Data]
+    end
+
+    subgraph Traffic_Data [Dynamic Traffic Layer]
+        HistTraffic[<b>Historical Traffic</b><br/>Speed Patterns / CSV-Bin]
+        LiveTraffic[<b>Live Traffic</b><br/>traffic.tar / Real-time]
+    end
+
+    subgraph Data_Storage [Static Data Format]
+        GraphTiles[(<b>GraphTiles</b><br/>Tiled Data Structure)]
+    end
+    Tyr == <b>PBF</b> ==> Loki
+    Loki == <b>PBF</b> ==> Thor
+    Thor == <b>PBF</b> ==> Odin
+    Odin == <b>PBF</b> ==> Tyr
+    Loki -->|Identify Edges| Balder
+    Thor -->|Traverse Graph| Balder
+    Thor -->|Request Costs| Sif
+    Meili -->|Trace Logic| Thor
+    Sif -.->|Lookup Live| LiveTraffic
+    Sif -.->|Lookup Patterns| HistTraffic
+    Balder -->|Read Tiles| GraphTiles
+    Thor -.->|Optional| Skadi
+    class Tyr,Loki,Thor,Odin,Meili service;
+    class Sif,Balder,Skadi core;
+    class GraphTiles data;
+    class HistTraffic,LiveTraffic traffic;
